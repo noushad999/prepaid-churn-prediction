@@ -77,36 +77,30 @@ A production-ready machine learning system that predicts telecom customer churn 
 
 ## 🏗️ System Architecture
 
-┌─────────────────────────────────────────┐
-│ Data Pipeline                           │
-├─────────────────────────────────────────┤
-│ - 10,000+ customer records              │
-│ - 19 feature dimensions                 │
-│ - ADASYN class balancing                │
-│ - StandardScaler normalization          │
-└────────────┬────────────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────────────┐
-│ Deep Neural Network (PyTorch)           │
-├─────────────────────────────────────────┤
-│ Input Layer: 19 features                │
-│ Hidden 1: 256 neurons + ReLU + BN       │
-│ Hidden 2: 128 neurons + ReLU + BN       │
-│ Hidden 3: 64 neurons + ReLU + BN        │
-│ Output Layer: 2 classes (Binary)        │
-│ Dropout: 30% | Optimizer: Adam          │
-└────────────┬────────────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────────────┐
-│ REST API (Flask)                        │
-├─────────────────────────────────────────┤
-│ GET /health - Health check              │
-│ POST /predict - Single prediction       │
-│ POST /predict_batch- Batch predictions  │
-└─────────────────────────────────────────┘
+The project follows a modular 3-stage architecture:
 
+graph TD
+    subgraph Data_Pipeline [Data Processing Pipeline]
+        A[Raw Data: 10k+ Records] --> B{Class Imbalance?}
+        B -- Yes --> C[ADASYN Oversampling]
+        C --> D[StandardScaler Normalization]
+        D --> E[19 Feature Vectors]
+    end
+
+    subgraph Deep_Learning [PyTorch DNN Model]
+        E --> F[Input Layer: 19 Nodes]
+        F --> G[Hidden 1: 256 + ReLU + BN]
+        G --> H[Hidden 2: 128 + ReLU + BN]
+        H --> I[Hidden 3: 64 + ReLU + BN]
+        I --> J[Dropout 30%]
+        J --> K[Output: Binary Class]
+    end
+
+    subgraph API_Layer [Flask REST API]
+        K --> L[POST /predict]
+        K --> M[POST /predict_batch]
+        N[GET /health]
+    end
 ---
 
 ## 📊 Model Performance
