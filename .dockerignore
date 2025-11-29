@@ -1,0 +1,18 @@
+# .dockerignore
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.log
+.DS_Store
+.git
+.gitignore
+*.md
+.vscode
+.idea
+mlruns/
+*.egg-info/
+.pytest_cache/

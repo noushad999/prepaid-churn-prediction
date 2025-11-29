@@ -1,0 +1,17 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.Python
+*.log
+.DS_Store
+
+# Testing (will add later)
+.pytest_cache/
+htmlcov/
+.coverage
+
+# ML/Data
+mlruns/
+data/processed/*.npy
