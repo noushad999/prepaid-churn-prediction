@@ -78,36 +78,34 @@ A production-ready machine learning system that predicts telecom customer churn 
 ## 🏗️ System Architecture
 
 ┌─────────────────────────────────────────┐
-│ Data Pipeline │
+│ Data Pipeline                           │
 ├─────────────────────────────────────────┤
-│ - 10,000+ customer records │
-│ - 19 feature dimensions │
-│ - ADASYN class balancing │
-│ - StandardScaler normalization │
+│ - 10,000+ customer records              │
+│ - 19 feature dimensions                 │
+│ - ADASYN class balancing                │
+│ - StandardScaler normalization          │
 └────────────┬────────────────────────────┘
-│
-▼
+             │
+             ▼
 ┌─────────────────────────────────────────┐
-│ Deep Neural Network (PyTorch) │
+│ Deep Neural Network (PyTorch)           │
 ├─────────────────────────────────────────┤
-│ Input Layer: 19 features │
-│ Hidden 1: 256 neurons + ReLU + BN │
-│ Hidden 2: 128 neurons + ReLU + BN │
-│ Hidden 3: 64 neurons + ReLU + BN │
-│ Output Layer: 2 classes (Binary) │
-│ Dropout: 30% | Optimizer: Adam │
+│ Input Layer: 19 features                │
+│ Hidden 1: 256 neurons + ReLU + BN       │
+│ Hidden 2: 128 neurons + ReLU + BN       │
+│ Hidden 3: 64 neurons + ReLU + BN        │
+│ Output Layer: 2 classes (Binary)        │
+│ Dropout: 30% | Optimizer: Adam          │
 └────────────┬────────────────────────────┘
-│
-▼
+             │
+             ▼
 ┌─────────────────────────────────────────┐
-│ REST API (Flask) │
+│ REST API (Flask)                        │
 ├─────────────────────────────────────────┤
-│ GET /health - Health check │
-│ POST /predict - Single prediction │
-│ POST /predict_batch- Batch predictions │
+│ GET /health - Health check              │
+│ POST /predict - Single prediction       │
+│ POST /predict_batch- Batch predictions  │
 └─────────────────────────────────────────┘
-
-text
 
 ---
 
