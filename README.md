@@ -320,9 +320,9 @@ MIT License
 ## 📧 **Contact**
 
 **Noushad – ML Engineering Enthusiast**
-Dhaka, Bangladesh | CS Student
+Dhaka, Bangladesh | CSE Student
 
-GitHub • LinkedIn • Email (as provided)
+GitHub • LinkedIn • Email (as provided In My Github)
 
 ---
 
