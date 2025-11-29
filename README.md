@@ -1,200 +1,219 @@
 
 <div align="center">
 
-# 🔮 Telecom Customer Churn Prediction System
-### 🚀 The AI-Powered Retention Engine
+# 🔮 Telecom Customer Churn Prediction
+### Enterprise-Grade AI Retention System
 
-**Identify Risks. Prevent Churn. Save Millions.**
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.1.0-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
-<p>
-  <a href="https://www.python.org/">
-    <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
-  </a>
-  <a href="https://pytorch.org/">
-    <img src="https://img.shields.io/badge/PyTorch-2.1.0-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white" alt="PyTorch">
-  </a>
-  <a href="https://flask.palletsprojects.com/">
-    <img src="https://img.shields.io/badge/Flask-API_Ready-000000?style=for-the-badge&logo=flask&logoColor=white" alt="Flask">
-  </a>
-  <a href="https://www.docker.com/">
-    <img src="https://img.shields.io/badge/Docker-Containerized-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
-  </a>
+<img src="https://raw.githubusercontent.com/noushad999/telecom-churn-prediction/main/docs/banner_placeholder.png" alt="Project Banner" width="100%" />
+
+<p align="center">
+  <a href="#-key-features">Key Features</a> •
+  <a href="#-architecture">Architecture</a> •
+  <a href="#-performance-benchmarks">Benchmarks</a> •
+  <a href="#-installation">Installation</a> •
+  <a href="#-api-reference">API Reference</a> •
+  <a href="#-citation">Citation</a>
 </p>
-
-<p>
-  <a href="#-business-impact">💰 Business Impact</a> •
-  <a href="#-system-architecture">🏗️ Architecture</a> •
-  <a href="#-quick-start-guide">🚀 Quick Start</a> •
-  <a href="#-api-documentation">📡 API Docs</a> •
-  <a href="#-author">👨‍💻 Author</a>
-</p>
-
-<img src="https://raw.githubusercontent.com/noushad999/telecom-churn-prediction/main/docs/demo_placeholder.png" alt="System Dashboard Preview" width="800" onerror="this.style.display='none'"/>
 
 </div>
 
 ---
 
-## 💰 Business Impact
-Why does this project exist? To solve a **$4.2M** problem.
+## 📖 Introduction
 
-| 📉 Revenue at Risk | 🛡️ Potential Savings | 🎯 Prediction Accuracy | ⚡ Processing Speed |
-|:---:|:---:|:---:|:---:|
-| **$4.2M** | **$2.1M / year** | **75%** | **<100ms** |
-| *Identified Exposure* | *Targeted Retention* | *Recall Score* | *Real-time API* |
+**Telecom Customer Churn Prediction** is a production-ready machine learning pipeline designed to identify at-risk customers in the telecommunications sector. Unlike traditional rule-based systems, this project utilizes a **Deep Neural Network (DNN)** with ADASYN oversampling to handle class imbalance, delivering high recall rates for churn detection.
 
-> **Bottom Line:** By identifying high-risk customers early, we enable proactive retention campaigns that yield a **738% ROI**.
+The system is fully containerized using Docker and exposes a RESTful API via Flask, making it ready for integration into enterprise CRM systems (Salesforce, HubSpot, etc.).
+
+### 🎯 The Problem vs. Our Solution
+
+| Feature | ❌ Traditional Analytics | ✅ Our AI Solution |
+| :--- | :--- | :--- |
+| **Approach** | Reactive (Analyze after churn) | **Proactive** (Predict before churn) |
+| **Data Scope** | Limited to billing data | **Multi-dimensional** (Support, Usage, Demographics) |
+| **Scalability** | Manual Spreadsheets/SQL | **Automated** Docker Containers |
+| **Actionability** | Generic Reports | **Targeted** API Recommendations |
 
 ---
 
-## 🏗️ System Architecture
+## ✨ Key Features
 
-A robust, end-to-end machine learning pipeline designed for production.
+### 🧠 Advanced AI Core
+* **Deep Learning Model:** 4-layer PyTorch Neural Network optimized for tabular data.
+* **Imbalance Handling:** Integrated **ADASYN** (Adaptive Synthetic Sampling) to detect minority class (churners) effectively.
+* **Feature Engineering:** Automated pipeline for categorical encoding and numerical scaling.
+
+### ⚙️ Production Engineering
+* **Microservice Architecture:** Decoupled inference engine accessible via REST API.
+* **Containerization:** `Dockerfile` and `docker-compose` included for "write once, run anywhere" capability.
+* **Latency:** Sub-100ms inference time for real-time applications.
+
+### 📊 Business Intelligence
+* **Risk Segmentation:** Classifies users into `Critical`, `High`, `Medium`, and `Low` risk.
+* **ROI Calculator:** Estimates revenue saved based on retention campaign success rates.
+
+---
+
+## 🏗 Architecture
+
+The system follows a modern ML Ops pipeline structure.
 
 ```mermaid
-graph TD
-    %% Define Styles
-    classDef dark fill:#2d3436,stroke:#fff,stroke-width:2px,color:#fff;
-    classDef ai fill:#6c5ce7,stroke:#fff,stroke-width:2px,color:#fff;
-    classDef api fill:#00cec9,stroke:#fff,stroke-width:2px,color:#000;
-    classDef ui fill:#fab1a0,stroke:#333,stroke-width:2px,color:#000;
-
-    subgraph Data_Pipeline [📡 Data Pipeline]
-        A[Customer Data] -->|Cleaning| B(Preprocessing)
-        B -->|Feature Eng| C(ADASYN Balancing)
+flowchart LR
+    subgraph Data ["📡 Data Layer"]
+        Raw[(Raw CSV)] --> Clean(Preprocessing)
+        Clean --> Split(Train/Test Split)
     end
 
-    subgraph AI_Core [🧠 AI Core]
-        C --> D[Deep Neural Network]
-        D --> E[Prediction Engine]
+    subgraph Model ["🧠 Model Layer"]
+        Split --> Oversample(ADASYN)
+        Oversample --> Training(PyTorch DNN)
+        Training --> Weights{{Model Weights}}
     end
 
-    subgraph Deployment [🚀 Deployment & UI]
-        E --> F[REST API / Flask]
-        F --> G[Web Interface]
-        F --> H[Executive Reports]
+    subgraph Serving ["🚀 Serving Layer"]
+        Weights --> Inference(Prediction Engine)
+        Inference --> API[Flask API]
+        API --> Client((Web/Mobile App))
     end
 
-    %% Apply Styles
-    class A,B,C dark;
-    class D,E ai;
-    class F api;
-    class G,H ui;
+    style Model fill:#f9f,stroke:#333,stroke-width:2px
+    style Serving fill:#bbf,stroke:#333,stroke-width:2px
 ````
 
 -----
 
-## 🚀 Quick Start Guide
+## 📊 Performance Benchmarks
 
-Run the entire system in minutes using Docker or Python directly.
+We prioritize **Recall** over Precision because missing a churning customer (False Negative) is more costly than offering a discount to a loyal one (False Positive).
 
-\<details open\>
-\<summary\>\<b\>🐳 Option 1: Docker (Recommended)\</b\>\</summary\>
-<br>
+| Metric | Score | Description |
+| :--- | :--- | :--- |
+| **Accuracy** | `74.96%` | Overall correct predictions |
+| **Recall** | `74.96%` | **Key Metric:** Ability to catch churners |
+| **Precision** | `75.08%` | Accuracy of positive churn predictions |
+| **F1-Score** | `0.7496` | Harmonic balance of Precision & Recall |
 
-Perfect for instant setup without dependency hell.
+> *Benchmarks run on Intel i7, 16GB RAM environment using the Telco Customer Churn Dataset.*
+
+-----
+
+## 💻 Installation
+
+### Prerequisites
+
+  * Docker & Docker Compose (Recommended)
+  * **OR** Python 3.10+
+
+### Option A: Docker (Production Style)
 
 ```bash
 # 1. Clone the repository
 git clone [https://github.com/noushad999/telecom-churn-prediction.git](https://github.com/noushad999/telecom-churn-prediction.git)
-cd telecom-churn-prediction
 
-# 2. Build and Start
+# 2. Build and start services
 docker-compose up -d --build
 
-# 3. Access
-# UI: http://localhost:5001
+# 3. Verify status
+docker ps
 ```
 
-\</details\>
-
-\<details\>
-\<summary\>\<b\>🐍 Option 2: Manual Python Setup\</b\>\</summary\>
-<br>
-
-If you want to modify the code or run locally.
+### Option B: Local Development
 
 ```bash
-# 1. Create Environment
+# 1. Create virtual environment
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 
-# 2. Install Deps
+# 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Initialize & Run
-python download_data.py   # 1. Get Data
-python main_simple.py     # 2. Train Model
-python api.py             # 3. Start Server
+# 3. Run the pipeline
+python main_simple.py     # Train the model
+python api.py             # Start the API server
 ```
-
-\</details\>
 
 -----
 
-## 📡 API Documentation
+## 📡 API Reference
 
-Integrate the churn engine into your existing CRM.
+The API runs on `http://localhost:5001`.
 
 ### `POST /predict`
 
-Get a real-time risk assessment for a single customer.
+Predicts churn probability for a specific customer profile.
 
-**Example Request:**
+**Request Body (JSON):**
 
 ```json
 {
   "Contract": "Month-to-month",
   "InternetService": "Fiber optic",
-  "tenure": 2,
-  "MonthlyCharges": 95.50
+  "tenure": 5,
+  "MonthlyCharges": 90.5,
+  "PaymentMethod": "Electronic check",
+  "SeniorCitizen": 0,
+  "Partner": "No",
+  "Dependents": "No"
+  // ... other features
 }
 ```
 
-**Example Response:**
+**Success Response (200 OK):**
 
 ```json
 {
-  "prediction": "Churn",
-  "probability": 0.92,
-  "risk_level": "Critical",
-  "action": "Offer 20% discount immediately"
+  "status": "success",
+  "data": {
+    "prediction": "Churn",
+    "probability": 0.8923,
+    "risk_level": "Critical",
+    "recommended_action": "Initiate 'Save-the-Customer' Protocol: Offer 20% discount."
+  }
 }
 ```
 
 -----
 
-## 📂 Project Structure
-
-A clean, modular architecture separating concerns.
-
-\<details\>
-\<summary\>\<b\>📂 Click to view file tree\</b\>\</summary\>
+## 📂 Directory Structure
 
 ```text
-telecom-churn-prediction/
-├── 📄 api.py                # 🌐 Flask REST API entry point
-├── 🧠 main_simple.py        # 🏋️ Model training pipeline
-├── 🐳 Dockerfile            # 📦 Container configuration
-├── 📜 docker-compose.yml    # 🐙 Multi-container orchestration
-├── 📋 requirements.txt      # 📦 Python dependencies
-├── 📁 src/
-│   ├── 🏗️ models/           # PyTorch neural network classes
-│   ├── ⚙️ data_processing/  # Cleaning & feature engineering
-│   └── 🧪 training/         # Training loops & validation
-├── 📁 data/                 # 💾 Raw & processed datasets
-└── 📁 checkpoints/          # 💾 Saved model weights (.pth)
+.
+├── 📂 checkpoints/      # Trained model artifacts (.pth files)
+├── 📂 data/             # Raw and processed datasets
+├── 📂 docs/             # Documentation assets (images, diagrams)
+├── 📂 src/              # Source code
+│   ├── data_loader.py   # Data ingestion scripts
+│   ├── model.py         # PyTorch neural network class
+│   └── trainer.py       # Training loop logic
+├── 📄 api.py            # Flask application entry point
+├── 📄 Dockerfile        # Container definition
+├── 📄 main_simple.py    # Main execution script
+└── 📄 requirements.txt  # Python dependencies
 ```
-
-\</details\>
 
 -----
 
-## 🔮 Roadmap & Future Improvements
+## 📜 Citation
 
-  - [ ] **Database Integration:** Move from CSV to PostgreSQL for live data.
-  - [ ] **Explainable AI (XAI):** Integrate SHAP values to explain *why* a customer is leaving.
-  - [ ] **Frontend:** Build a React/Next.js dashboard for better visualization.
+If you use this code for your research, please cite it as:
+
+```bibtex
+@misc{ramim2025telecomchurn,
+  author = {Ramim, Md Noushad Jahan},
+  title = {Telecom Customer Churn Prediction System},
+  year = {2025},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{[https://github.com/noushad999/telecom-churn-prediction](https://github.com/noushad999/telecom-churn-prediction)}}
+}
+```
 
 -----
 
@@ -203,22 +222,17 @@ telecom-churn-prediction/
 \<div align="center"\>
 
 **Md Noushad Jahan Ramim**
-<br>
-*AI Developer | ML Researcher | Innovator*
 
-[](https://linkedin.com/in/yourprofile)
+*AI Developer | ML Researcher*
+
 [](https://github.com/noushad999)
+[](https://linkedin.com/in/yourprofile)
 [](mailto:your.email@example.com)
 
-<br>
-&lt;i&gt;&quot;Turning Data into Decisions.&quot;&lt;/i&gt;
-&lt;/div&gt;
+\</div\>
 
 -----
 
 \<div align="center"\>
-\<sub\>Built in Bangladesh\</sub\>
+\<sub\>This project is licensed under the MIT License.\</sub\>
 \</div\>
-
-```
-```
