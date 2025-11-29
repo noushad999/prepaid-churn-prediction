@@ -433,11 +433,11 @@ ML Engineering Enthusiast | Computer Science Student
 
 ### ⭐ Star this repository if you find it useful!
 
-**Built with ❤️ for ML Engineering Excellence**
+**Built in Bangladesh**
 
 📊 10,000+ Predictions | 💰 $4.2M Risk ID'd | ⚡ Real-Time | 🐳 Production-Ready
 
-text
+]
 
 *Last Updated: November 29, 2025*
 
