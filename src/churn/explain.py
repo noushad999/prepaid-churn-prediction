@@ -19,7 +19,7 @@ FAMILY_LABELS = {
     "recharge_slowdown": "Recharge slowdown: longer gaps, fewer or smaller top-ups",
     "usage_decline": "Falling voice / data / revenue",
     "network_experience": "Poor network experience: call drops, slow data, complaints",
-    "competitor_pressure": "Calls shifting to a competitor network / competitor promotion",
+    "competitor_pressure": "Competitor pull: calls shifting to a rival network, local promotions",
     "social_contagion": "Close contacts recently left the network",
     "early_life": "New SIM in the early-life churn window",
     "credit_stress": "Frequent emergency balance loans",

@@ -23,6 +23,9 @@ churn:
   lookback_months: 3
   inactivity_months: 2
 
+features:
+  exclude: []                  # e.g. [gender, age] where local policy forbids targeting on them
+
 training:
   # Out-of-time design: standing at the end of 2025-10, labels are known for cutoffs <= 2025-08.
   train_cutoffs: ["2025-03", "2025-04", "2025-05", "2025-06", "2025-07"]

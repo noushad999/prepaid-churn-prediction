@@ -6,7 +6,7 @@ the data to estimate that directly:
 
     uplift(x) = P(churn | x, no offer) - P(churn | x, offer)
 
-We fit an X-learner (Künzel et al., 2019) with LightGBM base learners on earlier campaigns
+We fit a seed-ensembled X-learner (Künzel et al., 2019) with LightGBM base learners on earlier campaigns
 and evaluate out-of-time on a later campaign with the Qini curve, against a T-learner and against
 plain churn-risk ranking. The Qini curve is the incremental churners prevented when
 treating the top-k subscribers by score, estimated from the randomised holdout. Four kinds of
@@ -51,29 +51,22 @@ def campaign_frame(snapshot: pl.DataFrame, campaigns: pl.DataFrame, month: str) 
 
 
 class UpliftModel:
-    """Two-arm meta-learner over LightGBM; `learner` is "x" (X-learner) or "t" (T-learner).
+    """Seed-ensembled two-arm meta-learner over LightGBM; `learner` is "x" (X-learner) or "t" (T-learner).
 
     X-learner: fit outcome models per arm, impute individual effects on each arm with the other
     arm's model, regress those effects on features, and blend with the propensity (0.5 in a
     randomised 50/50 campaign). It borrows strength across arms, which matters when effects are
-    small and noisy, as retention effects are.
+    small and noisy, as retention effects are. Because single fits are still noisy, `n_models`
+    learners with different seeds are averaged, so the targeting decision does not depend on luck.
     """
 
     NAMES = ("mu_treated", "mu_control", "tau_treated", "tau_control")
 
-    def __init__(self, boosters: dict[str, lgb.Booster], metadata: dict):
-        self.boosters, self.metadata = boosters, metadata
+    def __init__(self, members: list[dict[str, lgb.Booster]], metadata: dict):
+        self.members, self.metadata = members, metadata
 
-    @classmethod
-    def fit(
-        cls,
-        X: pd.DataFrame,
-        t: np.ndarray,
-        y: np.ndarray,
-        learner: str = "x",
-        rounds: int = 200,
-        seed: int = 42,
-    ) -> UpliftModel:
+    @staticmethod
+    def _fit_one(X, t, y, learner: str, rounds: int, seed: int) -> dict[str, lgb.Booster]:
         params = PARAMS | {"seed": seed}
         tr, co = t == 1, t == 0
         b = {
@@ -86,23 +79,44 @@ class UpliftModel:
             d_control = y[co] - b["mu_treated"].predict(X[co])
             b["tau_treated"] = lgb.train(reg, lgb.Dataset(X[tr], d_treated), num_boost_round=rounds)
             b["tau_control"] = lgb.train(reg, lgb.Dataset(X[co], d_control), num_boost_round=rounds)
-        meta = {"learner": {"x": "X-learner", "t": "T-learner"}[learner] + " (LightGBM)", "rounds": rounds}
-        return cls(b, meta)
+        return b
+
+    @classmethod
+    def fit(
+        cls,
+        X: pd.DataFrame,
+        t: np.ndarray,
+        y: np.ndarray,
+        learner: str = "x",
+        rounds: int = 200,
+        seed: int = 42,
+        n_models: int = 5,
+    ) -> UpliftModel:
+        members = [cls._fit_one(X, t, y, learner, rounds, seed + k) for k in range(n_models)]
+        meta = {
+            "learner": {"x": "X-learner", "t": "T-learner"}[learner] + " (LightGBM)",
+            "rounds": rounds,
+            "n_models": n_models,
+        }
+        return cls(members, meta)
+
+    @staticmethod
+    def _predict_one(b: dict[str, lgb.Booster], X) -> np.ndarray:
+        if "tau_treated" in b:
+            propensity = 0.5
+            return propensity * b["tau_control"].predict(X) + (1 - propensity) * b["tau_treated"].predict(X)
+        return b["mu_control"].predict(X) - b["mu_treated"].predict(X)
 
     def predict(self, X) -> np.ndarray:
         """Estimated reduction in churn probability if the subscriber receives the offer."""
-        if "tau_treated" in self.boosters:
-            propensity = 0.5
-            return propensity * self.boosters["tau_control"].predict(X) + (1 - propensity) * self.boosters[
-                "tau_treated"
-            ].predict(X)
-        return self.boosters["mu_control"].predict(X) - self.boosters["mu_treated"].predict(X)
+        return np.mean([self._predict_one(b, X) for b in self.members], axis=0)
 
     def save(self, model_dir: str | Path) -> None:
         model_dir = Path(model_dir)
         model_dir.mkdir(parents=True, exist_ok=True)
-        for name, booster in self.boosters.items():
-            booster.save_model(str(model_dir / f"uplift_{name}.txt"))
+        for k, b in enumerate(self.members):
+            for name, booster in b.items():
+                booster.save_model(str(model_dir / f"uplift_{k}_{name}.txt"))
         (model_dir / "uplift_metadata.json").write_text(json.dumps(self.metadata, indent=2))
 
     @classmethod
@@ -110,12 +124,16 @@ class UpliftModel:
         model_dir = Path(model_dir)
         if not (model_dir / "uplift_metadata.json").exists():
             return None
-        boosters = {
-            n: lgb.Booster(model_file=str(model_dir / f"uplift_{n}.txt"))
-            for n in cls.NAMES
-            if (model_dir / f"uplift_{n}.txt").exists()
-        }
-        return cls(boosters, json.loads((model_dir / "uplift_metadata.json").read_text()))
+        metadata = json.loads((model_dir / "uplift_metadata.json").read_text())
+        members = [
+            {
+                n: lgb.Booster(model_file=str(model_dir / f"uplift_{k}_{n}.txt"))
+                for n in cls.NAMES
+                if (model_dir / f"uplift_{k}_{n}.txt").exists()
+            }
+            for k in range(metadata.get("n_models", 1))
+        ]
+        return cls(members, metadata)
 
 
 def qini_curve(y: np.ndarray, t: np.ndarray, score: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

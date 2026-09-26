@@ -157,3 +157,13 @@ def test_dashboard_renders(small_cfg, scores, tmp_path, monkeypatch):
     assert not app.exception, app.exception
     assert any("Churn risk" in t.value for t in app.title)
     assert len(app.tabs) == 4
+
+
+def test_features_can_be_excluded_by_policy(small_cfg, tables):
+    from churn import train
+    from churn.config import _deep_merge
+
+    cfg = _deep_merge(small_cfg, {"features": {"exclude": ["gender", "age"]}, "uplift": None})
+    res = train.run(cfg)
+    model = ChurnModel.load(Path(small_cfg["paths"]["registry_dir"]) / res["model_version"])
+    assert "gender" not in model.features and "age" not in model.features

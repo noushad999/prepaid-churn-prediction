@@ -93,7 +93,8 @@ def run(cfg: dict) -> dict:
         for name, df in (("train", train), ("valid", valid), ("test", test)):
             df.write_parquet(Path(paths["features_dir"]) / f"{name}.parquet")
 
-    features = feature_columns(train)
+    excluded = set(cfg.get("features", {}).get("exclude") or [])
+    features = [f for f in feature_columns(train) if f not in excluded]
     cat_features = [c for c in CATEGORICAL if c in features]
     categories = {c: sorted(train[c].drop_nulls().unique().to_list()) for c in cat_features}
     X_tr, X_va, X_te = (_to_pandas(d, features, categories) for d in (train, valid, test))
