@@ -167,11 +167,13 @@ def hero(t: dict, name: str) -> None:
 # ---------------------------------------------------------------------------- stats
 def stats(t: dict, name: str, m: dict) -> None:
     lgb = m["metrics_test"]["LightGBM"]
+    guard = m["uplift_test"]["profit_best"]["Risk × value + sleeping-dog guard"]["best_net_value"]
+    risk = m["uplift_test"]["profit_best"]["Churn risk × value"]["best_net_value"]
     cards = [
         (f"{lgb['roc_auc']:.3f}", "ROC-AUC on a future month\nthe model never saw"),
-        (f"{lgb['lift_top10']:.1f}×", "lift in the highest-risk\n10% of subscribers"),
         (f"{lgb['capture_top10']:.0%}", "of churners reached by\ncontacting only 10%"),
-        ("52 s", "to score, explain and target\n1M subscribers on 4 vCPUs"),
+        (f"+{guard / risk - 1:.0%}", "campaign profit from the\nuplift sleeping-dog guard"),
+        ("84 s", "monthly run for 1M subscribers,\nvalidated, scored, explained"),
     ]
     W, H = 16, 2.35
     fig, ax = _canvas(W, H, t)
@@ -205,11 +207,11 @@ def stats(t: dict, name: str, m: dict) -> None:
 
 # ------------------------------------------------------------------------- pipeline
 STAGES = [
-    ("01", "Operator data", ["subscribers", "monthly usage", "recharge events", "network & market"]),
-    ("02", "Snapshots", ["point-in-time features", "60-day silence label", "leakage-tested"]),
-    ("03", "Model", ["LightGBM", "out-of-time validated", "calibrated scores"]),
-    ("04", "Explain & decide", ["SHAP reason codes", "root-cause driver", "value-based targeting"]),
-    ("05", "Serve & monitor", ["CRM campaign list", "FastAPI, ~5 ms", "PSI drift checks"]),
+    ("01", "Operator data", ["data contract + checks", "CSV · Parquet · SQL", "pseudonymised MSISDNs"]),
+    ("02", "Snapshots", ["92 point-in-time features", "call graph · competitors", "60-day silence label"]),
+    ("03", "Models", ["LightGBM churn risk", "X-learner uplift", "out-of-time validated"]),
+    ("04", "Decide", ["SHAP root-cause driver", "value-based targeting", "sleeping-dog guard"]),
+    ("05", "Operate", ["registry · gate · rollback", "API · dashboard", "holdouts · backtests"]),
 ]
 
 
@@ -425,8 +427,7 @@ def waterfall(t: dict, path: Path, model: ChurnModel, test: pl.DataFrame) -> Non
     )
     driver = primary_driver(fam[i : i + 1], model.families)[0]
     ax.annotate(
-        f"TreeSHAP contributions by driver family · primary driver: {FAMILY_LABELS[driver].split(':')[0].lower()}"
-        " · churned in the test window",
+        f"TreeSHAP contributions by driver family · root cause: {driver.replace('_', ' ')} · churned in the test window",
         xy=(0, 1),
         xycoords="axes fraction",
         xytext=(0, 40),

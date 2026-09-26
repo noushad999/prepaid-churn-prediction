@@ -32,7 +32,7 @@ No. Subscriber data can't be published, so I simulated an operator DWH with real
 ## Model
 
 **Why LightGBM and not deep learning?**
-Tabular, heterogeneous features with missing values and monotone-ish effects are where boosted trees are strongest. It trains in about a minute on 1.5M rows, scores ~120k subscribers/s, and gives exact TreeSHAP explanations. The logistic-regression baseline shows the non-linearity is worth it (PR-AUC 0.55 vs 0.40).
+Tabular, heterogeneous features with missing values and monotone-ish effects are where boosted trees are strongest. It trains in about a minute on 1.6M rows, scores ~120k subscribers/s, and gives exact TreeSHAP explanations. The logistic-regression baseline shows the non-linearity is worth it (PR-AUC 0.55 vs 0.40).
 
 **Which metric do you optimise?**
 Ranking and business value, not accuracy. PR-AUC and capture@top-k show how many churners a fixed-size campaign reaches. KS is familiar to risk teams. The final judge is campaign **profit** on the test month.
@@ -43,26 +43,59 @@ Ranking and business value, not accuracy. PR-AUC and capture@top-k show how many
 ## Explainability and action
 
 **How does the call centre know what to do?**
-Per-subscriber TreeSHAP values are summed into 9 driver families. Symptoms (going quiet, spending less) are separated from root causes (early-life SIM, network, competitor offer, credit stress, multi-SIM). The action comes from the strongest root cause, because an offer should fix the cause, not the symptom. → `explain.primary_driver`
+Per-subscriber TreeSHAP values are summed into 10 driver families. Symptoms (going quiet, spending less) are separated from root causes (early-life SIM, network, competitor pull, social contagion, credit stress, multi-SIM). The action comes from the strongest root cause, because an offer should fix the cause, not the symptom. → `explain.primary_driver`
 
 **Isn't SHAP slow?**
-Yes, ~1000× a plain prediction. Batch runs explain only rows that get actioned (critical band + campaign targets): 1M subscribers score in 52 s end-to-end on 4 vCPUs. The API explains one subscriber in ~3 ms.
+Yes, ~1000× a plain prediction. Batch runs explain only rows that get actioned (critical band + campaign targets): The full monthly run for 1M subscribers (contract, features, scores, uplift, reasons, drift) takes 84 s on 4 vCPUs. The API explains one subscriber in ~5 ms.
 
 ## Business
 
 **How do you choose who to target?**
-Expected value: `p(churn) × save_rate × margin × ARPU × 6 months − (contact + redeemed offer cost)`, targeting only where it's positive. On the test month that's 2.8% of the base for +201k ৳, within 0.4% of the hindsight optimum. Random targeting at the same size loses money. → `campaign.py`
+Expected value: `p(churn) × save_rate × margin × ARPU × 6 months − (contact + redeemed offer cost)`, targeting only where it's positive. On top of that sits the uplift guard: never contact a subscriber whose predicted uplift is negative. → `campaign.py`, `score.py`
 
-**Where does `save_rate = 30%` come from?**
-It's an assumption. In production I'd measure it with a randomised **hold-out control group** in every campaign, then move to an **uplift model**. Some high-risk customers leave regardless, and some would stay anyway. You want the *persuadable* ones.
+**Why not just target the highest risk?**
+Because the highest-risk subscribers include *lost causes* (their calling circle has already moved to a competitor) and some subscribers are *sleeping dogs*: contacting them makes them leave. Randomised campaigns (50/50 treatment/holdout) let us estimate uplift directly. On an out-of-time campaign, "risk × value + sleeping-dog guard" earned 43.0k ৳ vs 31.9k ৳ for risk-only (+35%). → `uplift.py`
+
+**Why an X-learner, and why a seed ensemble?**
+Retention effects are tiny (≈4 churners per 1,000) and noisy. The X-learner (Künzel et al., 2019) borrows strength across arms and beat the T-learner here. A single fit's profit swung from 31k to 46k ৳ across seeds, so production averages five fits. Otherwise the targeting decision depends on luck. Uplift *alone* ranks well on Qini but ignores value, so it's used as a veto rather than as the ranking.
+
+**Where does `save_rate` come from?**
+Measured, not assumed. Every campaign list keeps a random 10% holdout, and `churn backtest` compares churn between treated and held-out targets once the outcome window closes. It measured 9% (95% CI for prevented churn: 1.2–6.4 per 1,000) where 30% had been assumed, so the config was recalibrated to 15% for targeted high-risk subscribers.
 
 ## Production
 
 **How is it deployed?**
-A monthly batch job (`churn score`) writes scores and a campaign CSV for the CRM tool. A FastAPI service serves on-demand scores and subscriber lookups. The model artifact freezes feature order, category levels and risk thresholds, so inference never re-fits anything (another v1 bug).
+One container image, three roles:
+- **Monthly job** (Kubernetes CronJob or Airflow DAG): validate → train → score → backtest → hot-reload the API.
+- **FastAPI service:** API keys, Prometheus metrics, JSON logs.
+- **Streamlit dashboard** for the CVM team.
+
+The model artifact freezes feature order, category levels and risk thresholds, so inference never re-fits anything (another v1 bug).
+
+**How do you stop a bad model reaching production?**
+Every training run is registered as a challenger. It's promoted only if, on its own out-of-time test month, it doesn't regress PR-AUC or capture@10% beyond tolerance against the champion *scored on the same rows*. Rejections are recorded, and `churn rollback` restores the previous champion in one step. → `registry.py`
 
 **How do you know when to retrain?**
-Every scoring run computes PSI per feature and for the score distribution against the validation month (> 0.25 → retrain). Once labels mature 60 days later, realised lift/capture is tracked against the test-month benchmark.
+There are two signals:
+- **Inputs:** every scoring run computes PSI per feature and for the score against the validation month (> 0.25 → investigate or retrain). It caught a simulated December network event (drop-rate PSI 0.55).
+- **Outcomes:** once labels mature, `churn backtest` compares realised capture and PR-AUC with what the model promised, and flags `DEGRADED`.
+
+Retraining is monthly anyway (`--as-of` rolls the windows), and the gate decides whether the new model serves.
+
+## Data and privacy
+
+**Will it work on our data?**
+Map your extract's column names and codes in config (`configs/operator_example.yaml`) and run `churn validate`. The data contract checks types, nulls, keys, ranges, allowed codes, orphan ids, month gaps and volume jumps before any feature is built. Errors block the run. → `contract.py`, `ingest.py`
+
+**How do you handle MSISDNs?**
+They're pseudonymised at ingestion with a salted BLAKE2b hash. The salt lives in a secret manager, never with the data. Joins still work across tables, but no raw number reaches features, models, scores or logs.
 
 **What would you change at Grameenphone scale (80M+ subscribers)?**
-Build snapshots in the warehouse (Spark/BigQuery/Hive) or a feature store instead of in-memory Polars. Partition scoring by region/sub_id range across workers (it's embarrassingly parallel). Keep LightGBM; it scales fine. Add call-graph (social network) features, because churn spreads through frequent contacts.
+Build snapshots in the warehouse (Spark/BigQuery/Hive) or a feature store instead of in-memory Polars. Partition scoring by region/sub_id range across workers (it's embarrassingly parallel). Keep LightGBM; it scales fine. SHAP stays cheap because only actioned subscribers (≈5–8% of the base) are explained.
+
+**Which telco-specific features matter most?**
+Beyond recency and trends:
+- **Competitor share of minutes** and its trend: calls drift to the network a subscriber is about to join.
+- **Social contagion:** contacts from the CDR graph who recently went silent.
+
+Both are point-in-time safe and add signal on top of usage features.

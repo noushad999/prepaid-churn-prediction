@@ -16,3 +16,4 @@ outputs/
 reports/drift_*.json
 
 .DS_Store
+reports/data_quality_*.json

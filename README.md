@@ -5,10 +5,11 @@
 
 <p align="center">
   <a href="#overview">Overview</a> ·
-  <a href="#why-prepaid-churn-is-hard">The problem</a> ·
-  <a href="#approach">Approach</a> ·
   <a href="#results">Results</a> ·
+  <a href="#who-to-contact-uplift-and-the-sleeping-dog-guard">Uplift</a> ·
+  <a href="#operating-it">Operations</a> ·
   <a href="#quickstart">Quickstart</a> ·
+  <a href="docs/architecture.md">Architecture</a> ·
   <a href="docs/interview_guide.md">Interview guide</a>
 </p>
 
@@ -20,203 +21,238 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/stats-dark.svg">
-  <img alt="0.892 ROC-AUC on an unseen month · 7.3× lift in the top decile · 73% of churners reached by contacting 10% · 52 s to score 1M subscribers" src="docs/assets/stats-light.svg" width="100%">
+  <img alt="0.897 ROC-AUC on an unseen month · 74% of churners reached by contacting 10% · +35% campaign profit from the uplift guard · 84 s monthly run for 1M subscribers" src="docs/assets/stats-light.svg" width="100%">
 </picture>
 
 ## Overview
 
-In prepaid mobile markets like Bangladesh, where more than 95% of connections are prepaid, customers rarely cancel. They stop recharging, move their spending to a second SIM, and go quiet. By the time a CRM team notices, the subscriber is already gone.
+In prepaid mobile markets like Bangladesh, where more than 95% of connections are prepaid, customers rarely cancel. They stop recharging, move their spending to a second SIM, and go quiet. By the time a CRM team notices, the subscriber is gone.
 
-This repository is a complete system for catching them early. It learns from the behaviour an operator already records (usage, recharges, network experience, competitor activity) and flags subscribers who are likely to go silent in the next 60 days. It explains each flag in business terms and recommends who is worth a retention offer. Four principles shape the design:
+This repository is a complete, deployable churn system for that problem. It is built the way an operator's data science and platform teams would build it:
 
-- **Churn is observed, not labelled.** A subscriber is a churner if they have zero usage *and* zero recharge for 60 days after a snapshot. No `Churn = Yes/No` column exists in real prepaid data, so none is used here.
-- **Evaluation matches deployment.** Features are point-in-time and tested for leakage. The model is scored on a future month it never saw, and probabilities are never distorted by resampling.
-- **Every score carries a reason.** Per-subscriber SHAP values roll up into drivers a retention team can act on, such as a new SIM, a bad network experience or a competitor offer.
-- **Contact decisions are economic.** A subscriber is contacted only when the expected value of saving them exceeds the cost of trying.
+- **It runs on operator data.** A data contract validates every extract. Column names and codes are mapped from config for CSV, Parquet or SQL sources, and MSISDNs are pseudonymised at the boundary.
+- **Churn is observed, not labelled.** A subscriber is a churner if they have zero usage *and* zero recharge for 60 days after a snapshot. Features are point-in-time and tested for leakage.
+- **It predicts risk and decides action.** LightGBM ranks risk. SHAP reason codes name the root cause and the offer. An uplift model blocks *sleeping dogs*: subscribers whom an offer would push out.
+- **It proves its own value.** Every campaign keeps a 10% holdout. Two months later a backtest measures the real save rate and the model's realised accuracy.
+- **It operates itself.** A registry with a champion/challenger gate and rollback, drift monitoring, a secured API with metrics, a CVM dashboard, and Kubernetes/Airflow deployment.
+
+<details>
+<summary><b>What's in the box</b></summary>
+<br>
+
+| Capability | Module | Command |
+|:--|:--|:--|
+| Behavioural operator-DWH simulator (6 tables, call graph, randomised campaigns) | `simulate.py` | `churn simulate` |
+| Data contract, operator ingestion, pseudonymisation | `contract.py`, `ingest.py` | `churn validate` |
+| Point-in-time features (92) and the 60-day silence label | `features.py` | – |
+| Churn model, baselines, out-of-time evaluation | `train.py`, `evaluate.py` | `churn train [--as-of]` |
+| Uplift X-learner (seed ensemble), Qini, policy economics | `uplift.py`, `campaign.py` | – |
+| Reason codes: SHAP → root-cause driver → next best action | `explain.py` | – |
+| Batch scoring, sleeping-dog guard, holdout arm, drift (PSI) | `score.py`, `monitor.py` | `churn score --month` |
+| Model registry, champion/challenger gate, rollback | `registry.py` | `churn models · promote · rollback` |
+| Realised performance and measured campaign effect | `backtest.py` | `churn backtest --month` |
+| Scoring API: auth, Prometheus metrics, hot reload | `api.py` | `churn serve` |
+| CVM dashboard | `dashboard.py` | `streamlit run src/churn/dashboard.py` |
+| Docker, Compose, Kubernetes, Airflow | `Dockerfile`, `deploy/` | `docker compose up` |
+
+</details>
 
 ## Why prepaid churn is hard
 
 <img src="docs/assets/story.png" width="100%" alt="Three subscribers: one winds down and goes silent, one goes quiet for a month and returns, one leaves without warning">
 
-<sub><b>Figure 1.</b> Monthly active days for three real subscribers from the simulated operator. Clay bars mark months of reduced activity; dots mark months with no activity at all.</sub>
+<sub><b>Figure 1.</b> Monthly active days for three subscribers from the simulated operator. Clay bars mark months of reduced activity; dots mark months with no activity at all.</sub>
 
-The model's job is to tell the first pattern from the second. Both show a sharp drop in activity. Only one ends in churn. The third pattern is the irreducible floor: some subscribers leave with no behavioural warning, and no model can catch them from usage data alone. The data here is built to contain all three, so the reported numbers are honest about that limit rather than inflated by an easy problem.
+The model has to tell the first pattern from the second: both show a sharp drop, and only one ends in churn. The third pattern is the irreducible floor, because some subscribers leave with no behavioural warning. The simulated data contains all three, plus:
+
+- *social contagion*: subscribers are more likely to leave once their contacts have left
+- *competitor pull*: calls drift to a rival network before the switch
+- competitor promotions, a July tariff change and Eid-season dormancy
 
 ## Approach
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/pipeline-dark.svg">
-  <img alt="Pipeline: operator data → snapshots → model → explain & decide → serve & monitor" src="docs/assets/pipeline-light.svg" width="100%">
+  <img alt="Pipeline: operator data → snapshots → models → decide → operate" src="docs/assets/pipeline-light.svg" width="100%">
 </picture>
 
-**01 · Operator data.** Subscriber-level telco data can't be published, so `churn simulate` generates the four extracts a churn team would pull from an operator's data warehouse. They have the same grain and columns. Churn *emerges* from behaviour, driven by:
+**01 · Operator data.** Six tables, defined in the [data contract](docs/data_contract.md): `subscribers`, `usage_monthly` (with minutes to Robi, Banglalink and Teletalk), `recharges` (one row per transaction), `network_market`, and the optional `contacts` (CDR call graph) and `campaigns` (randomised treatment/holdout). `churn validate` blocks the run on the following, and reports volume jumps as warnings:
 
-- tenure and early-life SIMs
-- multi-SIM use and on-net community strength
-- call drops and complaints
-- a competitor data-pack campaign in two divisions
-- a July tariff change hitting price-sensitive users
-- Eid-season dormancy
+- duplicate keys, broken types, nulls
+- unknown codes, orphan ids, month gaps
 
-| Table | Grain | Rows (300k base, 12 months) |
-|:--|:--|--:|
-| `subscribers` | SIM: activation, division, handset, plan, dual-SIM, app & MFS use | 426k |
-| `usage_monthly` | subscriber × active month: voice, data, SMS, revenue, active days, complaints, call drops | 4.0M |
-| `recharges` | top-up transaction: timestamp, denomination, channel | 10M |
-| `network_market` | division × month: drop rate, outages, competitor promotions | 96 |
-
-**02 · Snapshots.** One row per subscriber active in the cutoff month, with 82 features computed only from data up to that month's last day:
+**02 · Snapshots.** One row per subscriber active in the cutoff month. The 92 features cover:
 
 - recency and active-day trends
-- recharge gaps and ticket sizes, from raw transactions
+- recharge gaps and ticket sizes
 - usage trends
 - experienced network quality
-- competitor pressure
-- credit stress
+- **competitor share of minutes** and its trend
+- **contacts who recently went silent**
+- credit stress and tenure
 
 A test deletes every record after the cutoff and asserts that no feature changes.
 
-**03 · Model.** LightGBM is trained on five monthly snapshots (March–July, 1.56M rows), early-stopped on August, and evaluated on October. That mirrors production: standing at the end of October, August is the latest month whose 60-day outcome is known. Logistic regression and the classic "days since last recharge" rule are trained and evaluated alongside as baselines.
+**03 · Models.** LightGBM churn risk is trained on five monthly snapshots (1.59M rows), early-stopped on August and tested on October. That mirrors production, where only months whose 60-day outcome has closed are labelled. Alongside it, a seed-ensembled **X-learner** is fit on the randomised April and June campaigns and tested on September.
 
-**04 · Explain & decide.** TreeSHAP contributions are grouped into driver families. The strongest *root cause* picks the offer (see [below](#explaining-every-score)), and expected value decides who receives one.
+**04 · Decide.**
+- SHAP contributions roll up into driver families, and the strongest *root cause* chooses the offer.
+- Expected value decides who is worth contacting.
+- The uplift model vetoes subscribers the offer would push out.
 
-**05 · Serve & monitor.** A monthly batch job writes scores and a CRM-ready campaign list. A FastAPI service scores on demand. Population Stability Index checks flag drift before accuracy decays.
+**05 · Operate.**
+- Registry with a promotion gate and rollback, batch scoring with a holdout arm, and PSI drift checks.
+- Realised backtests, a secured API and the dashboard.
 
 ## Results
 
-All numbers come from **October**, a month excluded from training and model selection. It has 302,470 active subscribers, 3.9% of whom churned.
+All numbers come from **October**, a month excluded from training and model selection. It has 306,094 active subscribers, 3.8% of whom churned.
 
 <div align="center">
 
-| | **LightGBM** | Logistic regression | Recency rule |
+| | **LightGBM** | Logistic regression | Recency rule¹ |
 |:--|:--:|:--:|:--:|
-| ROC-AUC | **0.892** | 0.868 | 0.780 |
-| PR-AUC | **0.552** | 0.404 | 0.256 |
-| KS statistic | **0.661** | 0.616 | 0.407 |
-| Precision in the top 5% | **48.7%** | 40.1% | 33.3% |
-| Churners reached by contacting 10% | **73.2%** | 67.6% | 48.9% |
-| Net campaign value | **+201k ৳** | – | negative at every depth |
+| ROC-AUC | **0.897** | 0.876 | 0.780 |
+| PR-AUC | **0.548** | 0.404 | 0.246 |
+| KS statistic | **0.670** | 0.631 | 0.410 |
+| Precision in the top 5% | **48.2%** | 40.3% | 32.3% |
+| Churners reached by contacting 10% | **74.2%** | 68.7% | 48.1% |
 
 </div>
 
+<sub>¹ Rank by days since last recharge, the classic pre-ML CRM rule.</sub>
+
 <p align="center">
   <img src="reports/cumulative_gains.png" width="49%" alt="Cumulative gains">
-  <img src="reports/campaign_profit.png" width="49%" alt="Campaign profit">
+  <img src="reports/calibration.png" width="42%" alt="Calibration">
 </p>
 
-<sub><b>Figure 2.</b> Left: share of churners reached as the campaign grows, highest risk first. Right: realised net value of a retention campaign by targeting depth. The same campaign economics apply to every ranking.</sub>
+<sub><b>Figure 2.</b> Left: share of churners reached as a campaign grows, highest risk first. Right: predicted versus observed churn. The scores are calibrated (Brier 0.024) and can be used directly as probabilities.</sub>
 
-The model concentrates risk sharply. The highest-risk decile has a churn rate of 28.5%, 7.3 times the base rate, and holds 73% of all churners. Because the scores are calibrated (Brier 0.024), they can be used directly as probabilities in the targeting maths. The resulting policy contacts 2.8% of the base and lands within 0.4% of the best outcome achievable in hindsight. On the same month:
-
-- the recency rule never turns a profit at any depth
-- random targeting of the same size loses 191k ৳
-- a blanket offer to every subscriber loses 6.9M ৳
+The highest-risk decile has a 28.6% churn rate, 7.4 times the base rate, and holds 74% of all churners.
 
 <details>
-<summary><b>ROC and precision–recall curves, calibration, decile table</b></summary>
+<summary><b>ROC and precision–recall curves, decile table</b></summary>
 <br>
 
 <img src="reports/roc_pr.png" width="100%" alt="ROC and precision-recall curves">
-<p align="center"><img src="reports/calibration.png" width="48%" alt="Calibration"></p>
 
 | Decile | Subscribers | Churners | Churn rate | Lift | Cumulative capture |
 |:--:|--:|--:|--:|--:|--:|
-| 1 | 30,247 | 8,633 | 28.5% | 7.32 | 73.2% |
-| 2 | 30,247 | 898 | 3.0% | 0.76 | 80.8% |
-| 3 | 30,247 | 542 | 1.8% | 0.46 | 85.4% |
-| … | | | | | |
-| 10 | 30,247 | 107 | 0.4% | 0.09 | 100% |
+| 1 | 30,610 | 8,742 | 28.6% | 7.42 | 74.2% |
+| 2 | 30,609 | 876 | 2.9% | 0.74 | 81.7% |
+| 3 | 30,610 | 544 | 1.8% | 0.46 | 86.3% |
 
 Full metrics: [`reports/metrics.json`](reports/metrics.json) · [`reports/gains_test.csv`](reports/gains_test.csv)
 
 </details>
 
-## Explaining every score
+## Who to contact: uplift and the sleeping-dog guard
 
-A retention agent can't act on `rch_max_gap_days_90d = +0.41`. So each subscriber's TreeSHAP values are summed into nine driver families.
+A churn score answers *who is at risk*. A campaign only earns money on subscribers whose behaviour the offer *changes*. The randomised campaigns (50% treatment, 50% holdout) make that measurable. The table below shows out-of-time results on the September campaign (92,540 subscribers):
+
+| Targeting policy | Qini coefficient | Churners prevented per 1,000 treated (top 10%) | Best net campaign value |
+|:--|--:|--:|--:|
+| **Churn risk × value, sleeping-dog guard** | **1.39** | **48.1** | **43.0k ৳** |
+| Uplift (X-learner) alone | 1.43 | 43.0 | 26.6k ৳ |
+| Churn risk × value, no guard | 1.10 | 41.3 | 31.9k ৳ |
+| Random | −0.07 | −0.7 | 0 |
+
+<img src="reports/uplift.png" width="100%" alt="Qini curves and campaign value by targeting rule">
+
+<sub><b>Figure 3.</b> Left: churners prevented as more of the campaign population is treated. Right: realised net value (saved margin minus contact and offer cost) by targeting depth.</sub>
+
+Retention effects are small (3.8 per 1,000 on average) and noisy. Uplift alone ranks well on Qini, but it ignores subscriber value and misses high-value churners at the top of the list. Plain risk ranking has the opposite problem: it spends offers on sleeping dogs. The production policy combines them. It ranks by risk × value, and the uplift model acts as a **guard** that blocks subscribers predicted to react badly to contact (45% of the campaign population). That lifts campaign profit **35%** over plain risk ranking. A single uplift fit swung between 31k and 46k ৳ depending on its random seed, so production uses a 5-seed ensemble.
+
+`churn backtest` then measured the September campaign's real effect from its holdout: **3.8 churners prevented per 1,000 treated (95% CI 1.2–6.4), a 9% save rate**, against the 30% originally assumed in the configuration (now recalibrated). That gap is exactly why every campaign keeps a holdout.
+
+## Explaining every score
 
 <p align="center">
   <img src="reports/churn_drivers.png" width="49%" alt="Churn drivers across the base">
   <img src="docs/assets/reason_waterfall.png" width="49%" alt="Reason waterfall for one subscriber">
 </p>
 
-<sub><b>Figure 3.</b> Left: average influence of each driver family across the base. Right: how one subscriber's score builds up from the baseline. Their activity is fading, and the root cause the offer should address is credit stress.</sub>
+<sub><b>Figure 4.</b> Left: average influence of each driver family. Right: one subscriber's score built up from the baseline. Their activity is fading, and the root cause the offer should address is competitor pull.</sub>
 
-Driver families come in two kinds:
+Per-subscriber TreeSHAP values are summed into ten driver families. The families come in two kinds:
 
-- **Symptoms:** going quiet, spending less, recharging less.
-- **Causes:** a new SIM, a poor network experience, a competitor offer, credit stress, multi-SIM behaviour.
+- **Symptoms:** going quiet, falling usage, recharge slowdown.
+- **Causes:** new SIM, network experience, competitor pull, social contagion, credit stress, multi-SIM.
 
-Symptoms carry most of the predictive weight, but an offer only works if it addresses a cause. Each subscriber's `primary_driver` is therefore their strongest cause, falling back to the strongest symptom when no cause stands out.
+Symptoms carry most of the weight, but only a cause can be acted on. `primary_driver` is the strongest cause, and it selects the next best action:
 
 | Primary driver | Recommended action |
 |:--|:--|
 | `early_life` | Onboarding journey: bonus on 2nd/3rd recharge, app sign-up reward |
+| `competitor_pressure` | Price-matched counter-offer against the competitor the subscriber calls most |
+| `social_contagion` | Friends & family bundle: on-net group minutes to keep the circle together |
 | `network_experience` | Proactive care call, ticket for the serving site, goodwill minutes |
-| `competitor_pressure` | Geo-targeted, price-matched data-pack counter-offer |
 | `credit_stress` | Higher emergency-balance limit, micro packs |
 | `multi_sim_low_loyalty` | "Primary SIM" loyalty offer: on-net minutes and FnF bonus |
-| symptom fallback | Recharge bonus, win-back nudge or usage bundle |
 
-## Deciding who to contact
-
-```
-value_if_saved = save_rate × margin × ARPU × 6 months
-cost           = contact cost + redeem_rate × offer cost
-expected_net   = p(churn) × value_if_saved − cost          contact only if > 0
-```
-
-This is why a subscriber at 40% risk paying 800 ৳ a month can outrank one at 90% risk paying 30 ৳. Every assumption lives in [`configs/config.yaml`](configs/config.yaml).
-
-## Serving and monitoring
+## Operating it
 
 ```bash
-churn score --month 2025-12      # scores + CRM campaign list + drift report
-churn serve                      # FastAPI on :8000, docs at /docs
+churn validate                       # data contract → reports/data_quality.json (errors block the run)
+churn train --as-of 2025-12          # rolling out-of-time windows → new registry version → gate
+churn models                         # versions, champion, gate decisions
+churn score --month 2025-12          # scores, campaign list with holdout arm, drift report
+churn backtest --month 2025-10       # two months later: realised metrics + measured save rate
+churn rollback                       # restore the previous champion
 ```
 
+- **Champion/challenger.** A new model is promoted only if, on *its own* test month, it doesn't lose more than 0.005 in PR-AUC or capture@10% against the champion scored on exactly the same rows. Every decision is recorded in `artifacts/registry/registry.json`.
+- **Drift.** Each scoring run computes PSI per feature and for the score. In the December run, a simulated network event pushed `drop_call_rate_m0` to PSI 0.55 while the score stayed stable (0.004).
+- **Realised monitoring.** `churn backtest` compares realised ROC-AUC, PR-AUC and capture with what the model promised on its test month, and raises `DEGRADED` beyond the thresholds in config.
+
+The monthly cycle runs as a Kubernetes CronJob or an Airflow DAG: validate → train → score → backtest → hot-reload the API. See [architecture](docs/architecture.md), [deployment](docs/deployment.md) and the [runbook](docs/runbook.md).
+
+### Dashboard
+
+<img src="docs/assets/dashboard_overview.png" width="100%" alt="CVM dashboard overview">
+
+<img src="docs/assets/dashboard_campaign.png" width="100%" alt="Campaign builder with live ROI">
+
+<sub><b>Figure 5.</b> The CVM dashboard. Overview: risk, revenue at risk and drivers. Campaign builder: live ROI simulator with CSV export. Two further tabs cover model health (metrics, drift, registry, backtests) and subscriber lookup for call-centre agents.</sub>
+
+### API
+
 ```bash
-curl localhost:8000/v1/subscribers/138803
+curl -H "X-API-Key: $KEY" localhost:8000/v1/subscribers/409943
 ```
 ```json
 {
-  "sub_id": 138803, "tenure_months": 166, "arpu_3m": 499.0,
-  "churn_probability": 0.819, "risk_band": "critical", "expected_net_value": 378.6, "target": true,
-  "reasons": [
-    {"code": "inactivity",    "description": "Going quiet: fewer active days, long time since last activity"},
-    {"code": "usage_decline", "description": "Falling voice / data / revenue"}
-  ],
-  "primary_driver": "multi_sim_low_loyalty",
-  "recommended_action": "'Primary SIM' loyalty offer: on-net minutes + FnF bonus"
+  "sub_id": 409943, "division": "Dhaka", "tenure_months": 2, "arpu_3m": 499.0,
+  "churn_probability": 0.86, "risk_band": "critical", "uplift": 0.033, "sleeping_dog": false,
+  "expected_net_value": 201.5, "target": true, "arm": "treatment",
+  "primary_driver": "competitor_pressure",
+  "recommended_action": "Price-matched counter-offer against the competitor the subscriber calls most",
+  "reasons": [{"code": "usage_decline", "description": "Falling voice / data / revenue"},
+              {"code": "inactivity", "description": "Going quiet: fewer active days, long time since last activity"}],
+  "model_version": "v20260926-195935"
 }
 ```
 
-| Endpoint | Purpose |
-|:--|:--|
-| `POST /v1/predict` | Score up to 10k feature vectors with reasons and action |
-| `GET /v1/subscribers/{id}` | Latest batch score, for call-centre and CRM lookups |
-| `GET /v1/model` | Model version, training window, test metrics, features |
-| `GET /health` | Liveness |
+| Endpoint | Auth | Purpose |
+|:--|:--:|:--|
+| `POST /v1/predict` | key | Score up to 10k feature vectors with reasons, uplift and action |
+| `GET /v1/subscribers/{id}` | key | Latest batch score, for CRM and call-centre lookups |
+| `GET /v1/model` | key | Model version, training window, test metrics |
+| `POST /admin/reload` | key | Hot-swap to the newly promoted champion |
+| `GET /health`, `GET /metrics` | open | Probes and Prometheus |
 
-**Training–serving consistency.** Feature order, category levels and risk thresholds are frozen into the model artifact. Nothing is re-fitted at inference, and unknown values become missing rather than errors.
-
-**Drift monitoring.** Every scoring run compares each feature and the score distribution with the validation month using the Population Stability Index:
-
-| PSI | Meaning |
-|:--|:--|
-| < 0.10 | Stable |
-| 0.10–0.25 | Investigate |
-| > 0.25 | Retrain |
+Keys are held as SHA-256 digests and compared in constant time. Access logs are JSON with request ids and never contain features or identifiers. See [security](docs/security.md).
 
 ### Performance
 
 | Workload, 4 vCPU container | Time |
 |:--|--:|
-| Monthly run for **1M subscribers**: features, scores, reasons, campaign list, drift | **52 s** |
-| Monthly run for 300k subscribers | 15 s |
-| Training on 1.56M rows × 82 features | ~60 s |
-| Scoring throughput, without reasons | ~120k subscribers/s |
-| API request with reason codes | ~3 ms model, ~5 ms end to end |
+| Monthly run, **1M subscribers** (12.6M usage rows, 30M recharges, 11.8M contact edges): contract, features, scores, uplift, reasons, campaign list, drift | **84 s** |
+| Monthly run, 300k subscribers | 24 s |
+| Training: churn model on 1.59M rows × 92 features, plus baselines and uplift ensemble | ~3.5 min |
+| API: one subscriber with SHAP reasons and 5-model uplift | 4.8 ms model · 7.2 ms p50 HTTP |
+| API: batch-score lookup | 1.9 ms p50 |
 
 ## Quickstart
 
@@ -224,62 +260,43 @@ curl localhost:8000/v1/subscribers/138803
 git clone https://github.com/noushad999/telecom-churn-prediction.git
 cd telecom-churn-prediction
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev,dashboard]"
 
-churn pipeline                 # simulate a 300k-subscriber operator, train, score  (~3 min)
-churn serve                    # scoring API at http://localhost:8000/docs
-pytest                         # 20 tests, ~10 s
-python docs/assets/make_figures.py   # regenerate the README figures
+churn pipeline                                  # simulate a 300k-subscriber operator, train, score (~4 min)
+churn serve                                     # API at http://localhost:8000/docs
+streamlit run src/churn/dashboard.py            # dashboard at http://localhost:8501
+pytest                                          # 37 tests
 ```
 
-For an operator-scale run, use `churn pipeline --subscribers 1000000`.
-
-<details>
-<summary><b>Repository layout</b></summary>
-<br>
-
-```
-configs/config.yaml       simulation, churn definition, splits, model, campaign economics, risk bands
-src/churn/
-  simulate.py             behavioural operator-DWH simulator
-  features.py             point-in-time snapshots and the 60-day silence label
-  train.py                out-of-time training, baselines, evaluation, artifact export
-  evaluate.py             AUC, PR-AUC, KS, lift, capture, charts
-  explain.py              SHAP → driver families → root cause → action
-  campaign.py             expected-value targeting and profit curves
-  model.py                frozen model artifact, fast NumPy inference
-  score.py                monthly batch scoring, campaign list, drift report
-  monitor.py              Population Stability Index
-  api.py                  FastAPI service
-  style.py                shared visual style for charts and figures
-tests/                    leakage, label definition, simulator invariants, business logic, API
-reports/                  metrics and charts from the reference run
-docs/                     README figures, interview guide
-```
-
-</details>
+With Docker, `CHURN_API_KEYS=my-key docker compose up --build` runs the pipeline, API, dashboard and Prometheus.
 
 ## Using real operator data
 
-Provide the four tables with the same schemas and replace `simulate.load_tables`. Features, training, scoring and the API run unchanged. A production deployment would typically also:
+Copy [`configs/operator_example.yaml`](configs/operator_example.yaml), map your extract names and codes, and set `CHURN_PII_SALT`:
 
-1. Build snapshots in the warehouse or a feature store.
-2. Align the silence window with the finance definition of churn.
-3. Measure the save rate with randomised hold-out groups.
-4. Retrain on drift alerts or decaying realised lift.
+```bash
+churn --config configs/my_operator.yaml validate     # fix mappings until the contract passes
+churn --config configs/my_operator.yaml train --as-of 2025-12
+```
+
+Sources can be CSV, Parquet or SQL (`pip install -e ".[sql]"`). `contacts` and `campaigns` are optional: without them, the related features and the uplift guard are skipped. Scaling notes for 80M+ subscribers are in [architecture](docs/architecture.md#scaling-to-a-national-operator-80m-subscribers).
+
+## Documentation
+
+| Document | For |
+|:--|:--|
+| [Architecture](docs/architecture.md) | System design, monthly cycle, decisions, scaling |
+| [Data contract](docs/data_contract.md) | Every table, column, type and rule |
+| [Deployment](docs/deployment.md) | Compose, Kubernetes, Airflow, configuration, observability |
+| [Security & privacy](docs/security.md) | Pseudonymisation, access control, governance |
+| [Runbook](docs/runbook.md) | What to do when something fails |
+| [Interview guide](docs/interview_guide.md) | Design decisions and likely questions |
 
 ## Limitations
 
-- **The data is simulated.** The simulator encodes how prepaid markets behave, but the absolute figures illustrate the method; they are not any operator's results. What transfers is the design: the label, the leakage controls, the evaluation, the explanations and the economics.
-- **The retention effect is assumed.** Campaign value uses a fixed save rate. Real programmes need hold-out groups, and ultimately uplift models that find subscribers who can be persuaded rather than merely those at risk.
-- **Reasons explain the model, not the world.** A driver says why the model scored a subscriber highly. That is a hypothesis for the retention team, not a causal finding.
-
-## Next steps
-
-- Uplift modelling on campaign response data
-- Call-graph features: churn spreads through frequent contacts
-- Time-to-churn survival modelling for lifetime-value-aware offers
-- Experiment tracking and scheduled retraining
+- **The data is simulated.** The simulator encodes how prepaid markets behave, but the figures illustrate the method, not any operator's results. What transfers is the system: the contract, label, leakage controls, evaluation, uplift guard, holdouts and operations.
+- **Uplift needs randomised campaigns.** The guard is only as good as the test-and-learn data behind it. An operator without holdouts should start them before relying on it.
+- **Reasons explain the model, not the world.** A driver is a hypothesis for the retention team, not a causal finding. Only the holdout-measured effect is causal.
 
 ## Citation
 
