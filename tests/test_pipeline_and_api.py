@@ -139,3 +139,21 @@ def test_api_auth_metrics_and_reload(small_cfg, scores, monkeypatch):
 
     reloaded = client.post("/admin/reload", headers={"X-API-Key": "k-one"}).json()
     assert reloaded["current"] == reloaded["previous"]
+
+
+def test_dashboard_renders(small_cfg, scores, tmp_path, monkeypatch):
+    pytest = __import__("pytest")
+    pytest.importorskip("streamlit")
+    import yaml
+    from streamlit.testing.v1 import AppTest
+
+    cfg_path = tmp_path / "dash.yaml"
+    cfg_path.write_text(yaml.safe_dump(small_cfg))
+    monkeypatch.setenv("CHURN_CONFIG", str(cfg_path))
+    app = AppTest.from_file(
+        str(Path(__file__).parents[1] / "src" / "churn" / "dashboard.py"), default_timeout=60
+    )
+    app.run()
+    assert not app.exception, app.exception
+    assert any("Churn risk" in t.value for t in app.title)
+    assert len(app.tabs) == 4
