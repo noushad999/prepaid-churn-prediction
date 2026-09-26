@@ -19,9 +19,10 @@ def test_training_beats_baselines(trained):
 
 
 def test_artifacts_written(small_cfg, trained):
-    model_dir = Path(small_cfg["paths"]["model_dir"])
-    for f in ("model.txt", "metadata.json", "drift_reference.json"):
-        assert (model_dir / f).exists()
+    model_dir = Path(small_cfg["paths"]["model_dir"])  # deployment export of the champion
+    version_dir = Path(small_cfg["paths"]["registry_dir"]) / trained["model_version"]
+    for f in ("model.txt", "metadata.json", "drift_reference.json", "uplift_metadata.json"):
+        assert (model_dir / f).exists() and (version_dir / f).exists()
     for f in ("metrics.json", "roc_pr.png", "cumulative_gains.png", "campaign_profit.png", "gains_test.csv"):
         assert (Path(small_cfg["paths"]["reports_dir"]) / f).exists()
 
@@ -83,3 +84,29 @@ def test_api(small_cfg, scores):
     assert row["risk_band"] == "critical" and row["reasons"]
     assert client.get("/v1/subscribers/999999999").status_code == 404
     assert client.post("/v1/predict", json={"subscribers": []}).status_code == 422
+
+
+def test_registry_gate_promote_and_rollback(small_cfg, trained):
+    from churn import train
+    from churn.registry import Registry, gate
+
+    reg = Registry(small_cfg["paths"]["registry_dir"])
+    first = reg.champion()
+    assert first == trained["model_version"] and trained["promoted"]
+
+    again = train.run(small_cfg)  # same data -> challenger ties the champion -> promoted
+    assert again["promoted"] and reg.champion() == again["model_version"] != first
+    assert reg.rollback() == first and reg.champion() == first
+
+    ok, _ = gate({"pr_auc": 0.50, "capture_top10": 0.70}, {"pr_auc": 0.52, "capture_top10": 0.70}, 0.005)
+    assert not ok  # PR-AUC regression beyond tolerance is blocked
+
+
+def test_backtest_measures_realised_performance(small_cfg, trained):
+    from churn import backtest, score
+
+    score.run(small_cfg, "2025-09")
+    report = backtest.run(small_cfg, "2025-09")
+    assert report["realised"]["roc_auc"] > 0.75
+    assert report["status"] in ("HEALTHY", "DEGRADED")
+    assert report["campaign"] is not None and report["campaign"]["treated"] > 0

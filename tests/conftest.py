@@ -14,7 +14,7 @@ def small_cfg(tmp_path_factory) -> dict:
             "simulation": {"n_subscribers": 6000},
             "paths": {
                 k: str(root / k)
-                for k in ("raw_dir", "features_dir", "model_dir", "reports_dir", "scores_dir")
+                for k in ("raw_dir", "features_dir", "model_dir", "registry_dir", "reports_dir", "scores_dir")
             },
             "training": {"num_boost_round": 300},
         }

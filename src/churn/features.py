@@ -126,30 +126,7 @@ def build_snapshot(
         df = df.join(_graph_features(tables["contacts"], usage, cut), on="sub_id", how="left")
 
     if with_label:
-        horizon_end = add_months(cut, inactivity_months)
-        last_month = usage.select(pl.col("month").max()).item()
-        if horizon_end > last_month:
-            raise ValueError(
-                f"Cannot label cutoff {month_label(cut)}: need data through {month_label(horizon_end)}, "
-                f"have {month_label(last_month)}."
-            )
-        future = add_months(cut, 1)
-        alive_usage = usage.filter(pl.col("month").is_between(future, horizon_end)).select("sub_id")
-        alive_rch = (
-            tables["recharges"]
-            .filter(
-                pl.col("ts").is_between(
-                    datetime.combine(future, time.min), datetime.combine(month_end(horizon_end), time.max)
-                )
-            )
-            .select("sub_id")
-        )
-        alive = pl.concat([alive_usage, alive_rch]).unique()
-        df = (
-            df.join(alive.with_columns(_alive=pl.lit(1)), on="sub_id", how="left")
-            .with_columns(pl.col("_alive").is_null().cast(pl.Int8).alias(LABEL))
-            .drop("_alive")
-        )
+        df = df.join(build_labels(tables, cut, inactivity_months), on="sub_id", how="left")
 
     df = df.with_columns(
         snapshot=pl.lit(month_label(cut)),
@@ -160,6 +137,39 @@ def build_snapshot(
     ).drop("activation_month", "last_active_day_m0")
     front = KEY + ([LABEL] if with_label else [])
     return df.select(front + [c for c in df.columns if c not in front]).sort("sub_id")
+
+
+def build_labels(
+    tables: dict[str, pl.DataFrame], cutoff: str | date, inactivity_months: int = 2
+) -> pl.DataFrame:
+    """Churn label for every subscriber active in the cutoff month: silent for the next N months."""
+    cut = parse_month(cutoff)
+    usage = tables["usage_monthly"]
+    horizon_end = add_months(cut, inactivity_months)
+    last_month = usage.select(pl.col("month").max()).item()
+    if horizon_end > last_month:
+        raise ValueError(
+            f"Cannot label cutoff {month_label(cut)}: need data through {month_label(horizon_end)}, "
+            f"have {month_label(last_month)}."
+        )
+    future = add_months(cut, 1)
+    active = usage.filter(pl.col("month") == cut).select("sub_id").unique()
+    alive_usage = usage.filter(pl.col("month").is_between(future, horizon_end)).select("sub_id")
+    alive_rch = (
+        tables["recharges"]
+        .filter(
+            pl.col("ts").is_between(
+                datetime.combine(future, time.min), datetime.combine(month_end(horizon_end), time.max)
+            )
+        )
+        .select("sub_id")
+    )
+    alive = pl.concat([alive_usage, alive_rch]).unique().with_columns(_alive=pl.lit(1))
+    return (
+        active.join(alive, on="sub_id", how="left")
+        .with_columns(pl.col("_alive").is_null().cast(pl.Int8).alias(LABEL))
+        .drop("_alive")
+    )
 
 
 def _recharge_features(recharges: pl.DataFrame, cut_end: datetime) -> pl.DataFrame:

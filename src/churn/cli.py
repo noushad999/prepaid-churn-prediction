@@ -19,6 +19,12 @@ def main(argv: list[str] | None = None) -> None:
     p_score.add_argument(
         "--month", default=None, help="Snapshot month YYYY-MM (default: training.score_cutoff)"
     )
+    p_bt = sub.add_parser("backtest", help="Realised performance + measured campaign effect for a past month")
+    p_bt.add_argument("--month", required=True, help="Scored month YYYY-MM whose outcome window has passed")
+    sub.add_parser("models", help="List registered model versions and the champion")
+    p_pr = sub.add_parser("promote", help="Promote a registered version to champion")
+    p_pr.add_argument("version")
+    sub.add_parser("rollback", help="Restore the previous champion")
     p_all = sub.add_parser("pipeline", help="simulate -> train -> score")
     p_all.add_argument("--subscribers", type=int, default=None)
     p_serve = sub.add_parser("serve", help="Start the scoring API")
@@ -45,6 +51,28 @@ def main(argv: list[str] | None = None) -> None:
         print(report.summary())
         report.save(Path(cfg["paths"]["reports_dir"]) / "data_quality.json")
         raise SystemExit(0 if report.ok else 1)
+    if args.command in ("models", "promote", "rollback"):
+        from churn.registry import Registry, export_champion
+
+        reg = Registry(cfg["paths"]["registry_dir"])
+        if args.command == "promote":
+            reg.promote(args.version, reason="manual promotion")
+            export_champion(reg, cfg["paths"]["model_dir"])
+        elif args.command == "rollback":
+            print(f"Rolled back to {reg.rollback()}")
+            export_champion(reg, cfg["paths"]["model_dir"])
+        print(f"{'version':<22}{'status':<12}{'test':<9}{'ROC-AUC':>8}{'PR-AUC':>8}{'cap@10':>8}  decision")
+        for v in reg.versions():
+            print(
+                f"{v['version']:<22}{v['status']:<12}{v.get('test_cutoff', ''):<9}{v.get('roc_auc', 0):>8.3f}"
+                f"{v.get('pr_auc', 0):>8.3f}{v.get('capture_top10', 0):>8.1%}  {v.get('decision', '')}"
+            )
+        return
+    if args.command == "backtest":
+        from churn import backtest
+
+        backtest.run(cfg, args.month)
+        return
     if args.command in ("simulate", "pipeline"):
         from churn import simulate
 

@@ -24,6 +24,7 @@ from churn.explain import FAMILY_LABELS, global_family_importance
 from churn.features import CATEGORICAL, LABEL, build_many, build_snapshot, feature_columns
 from churn.model import ChurnModel
 from churn.monitor import build_reference, save_reference
+from churn.registry import Registry, export_champion, gate
 from churn.uplift import UpliftModel, campaign_frame, qini_curve, value_curve
 from churn.uplift import evaluate as evaluate_uplift
 
@@ -157,7 +158,6 @@ def run(cfg: dict) -> dict:
             uplift_results, uplift_model = _train_uplift(
                 cfg, tables, train, snap_kw, features, categories, booster, reports
             )
-            uplift_model.save(paths["model_dir"])
 
     with timer("charts"):
         ev.plot_roc_pr(y_te, scores, reports / "roc_pr.png")
@@ -172,13 +172,16 @@ def run(cfg: dict) -> dict:
             reports / "campaign_profit.png",
         )
 
-    with timer("export artifacts"):
+    with timer("register model + champion/challenger gate"):
+        registry = Registry(paths["registry_dir"])
+        version = registry.new_version()
+        vdir = registry.path(version)
         top_features = sorted(
             zip(features, booster.feature_importance("gain").tolist(), strict=True), key=lambda kv: -kv[1]
         )[:25]
         model.metadata.update(
             {
-                "model_version": datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S"),
+                "model_version": version,
                 "trained_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "label_definition": f"no usage and no recharge in the {ccfg['inactivity_months']} months after the snapshot month",
                 "lookback_months": ccfg["lookback_months"],
@@ -188,13 +191,43 @@ def run(cfg: dict) -> dict:
                 "best_iteration": booster.best_iteration,
                 "train_rows": int(len(y_tr)),
                 "test_metrics": metrics["LightGBM"],
+                "data_quality": dq.to_dict()["status"],
             }
         )
-        model.save(paths["model_dir"])
-        save_reference(build_reference(X_va, p_va), paths["model_dir"])
+        model.save(vdir)
+        save_reference(build_reference(X_va, p_va), vdir)
+        if uplift_results is not None:
+            uplift_model.save(vdir)
+
+        # fair comparison: score the current champion on exactly the challenger's test rows
+        champion_metrics = None
+        if (champ_dir := registry.champion_dir()) is not None:
+            champ = ChurnModel.load(champ_dir)
+            champion_metrics = ev.classification_metrics(y_te, champ.predict(champ.matrix(test)))
+        promote, reason = gate(
+            metrics["LightGBM"], champion_metrics, cfg.get("registry", {}).get("tolerance", 0.005)
+        )
+        registry.register(
+            version,
+            {
+                "test_cutoff": tcfg["test_cutoff"],
+                "roc_auc": metrics["LightGBM"]["roc_auc"],
+                "pr_auc": metrics["LightGBM"]["pr_auc"],
+                "capture_top10": metrics["LightGBM"]["capture_top10"],
+                "champion_on_same_rows": champion_metrics
+                and {k: champion_metrics[k] for k in ("roc_auc", "pr_auc", "capture_top10")},
+            },
+        )
+        if promote:
+            registry.promote(version, reason)
+            export_champion(registry, paths["model_dir"])
+        else:
+            registry.reject(version, reason)
 
     results = {
-        "model_version": model.metadata["model_version"],
+        "model_version": version,
+        "promoted": promote,
+        "promotion_decision": reason,
         "data": {
             "train_rows": int(len(y_tr)),
             "valid_rows": int(len(y_va)),
@@ -212,8 +245,10 @@ def run(cfg: dict) -> dict:
         "uplift_test": uplift_results,
         "timings_s": timer.marks,
     }
+    (vdir / "metrics.json").write_text(json.dumps(results, indent=2))
     (reports / "metrics.json").write_text(json.dumps(results, indent=2))
     _print_summary(results, gains, camp_cfg["currency"])
+    print(f"\nModel {version}: {'PROMOTED to champion' if promote else 'REJECTED'} — {reason}")
     return results
 
 

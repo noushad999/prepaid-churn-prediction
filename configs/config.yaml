@@ -6,7 +6,8 @@ seed: 42
 paths:
   raw_dir: data/raw            # simulated data warehouse extracts (parquet)
   features_dir: data/features  # feature snapshots
-  model_dir: artifacts/model   # model + metadata + drift reference
+  registry_dir: artifacts/registry  # every trained version + champion/challenger history
+  model_dir: artifacts/model   # deployment export of the current champion (mounted by the API)
   reports_dir: reports         # metrics, charts, gains tables
   scores_dir: outputs          # batch scores + campaign lists
 
@@ -47,10 +48,17 @@ campaign:
   contact_cost: 2.0            # SMS / OBD / push cost per targeted subscriber
   offer_cost: 15.0             # marginal cost of the retention bonus (e.g. bonus data pack)
   offer_redeem_rate: 0.6       # share of targeted subscribers who redeem the bonus
-  save_rate: 0.30              # share of true would-be churners retained by the offer
+  save_rate: 0.15              # share of would-be churners the offer retains; calibrate from `churn backtest`
   margin: 0.55                 # contribution margin on ARPU
   clv_months: 6                # value horizon of a saved subscriber
   holdout_share: 0.10          # random share of every campaign list kept as untreated control
+
+registry:
+  tolerance: 0.005             # challenger may not lose more than this in PR-AUC or capture@10%
+
+monitoring:                    # `churn backtest` alerts once outcomes are known
+  max_capture_drop: 0.05       # absolute drop in capture@10% vs the model's test month
+  max_pr_auc_drop_rel: 0.20    # relative drop in PR-AUC
 
 uplift:
   # Randomised test-and-learn campaigns (50% treatment / 50% holdout). Fit on earlier campaigns,

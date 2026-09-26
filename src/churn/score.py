@@ -14,6 +14,7 @@ from churn.campaign import expected_net
 from churn.features import build_snapshot
 from churn.model import ChurnModel
 from churn.monitor import drift_report, load_reference
+from churn.registry import resolve_model_dir
 from churn.uplift import UpliftModel
 
 
@@ -82,6 +83,7 @@ def score_snapshot(
                 np.where(holdout, "holdout", np.where(target, "treatment", None)).tolist(), dtype=pl.Utf8
             ),
             churn_probability=pl.col("churn_probability").cast(pl.Float32),
+            model_version=pl.lit(str(model.metadata.get("model_version", "unknown"))),
         )
     )
     return out.with_columns(
@@ -98,22 +100,21 @@ def run(cfg: dict, month: str | None = None) -> pl.DataFrame:
     reports.mkdir(parents=True, exist_ok=True)
 
     t0 = time.perf_counter()
-    model = ChurnModel.load(paths["model_dir"])
+    model_dir = resolve_model_dir(cfg)
+    model = ChurnModel.load(model_dir)
     tables, dq = ingest.load(cfg)
     dq.save(reports / f"data_quality_{month}.json")
     t_load = time.perf_counter()
     snap = build_snapshot(tables, month, lookback_months=cfg["churn"]["lookback_months"], with_label=False)
     t_feat = time.perf_counter()
-    scores = score_snapshot(model, snap, cfg["campaign"], UpliftModel.load(paths["model_dir"]))
+    scores = score_snapshot(model, snap, cfg["campaign"], UpliftModel.load(model_dir))
     t_score = time.perf_counter()
 
     scores.write_parquet(out_dir / f"scores_{month}.parquet")
     campaign = scores.filter(pl.col("target")).sort("expected_net_value", descending=True)
     campaign.drop("snapshot", "target").write_csv(out_dir / f"campaign_{month}.csv", float_precision=4)
 
-    drift = drift_report(
-        load_reference(paths["model_dir"]), model.frame(snap), scores["churn_probability"].to_numpy()
-    )
+    drift = drift_report(load_reference(model_dir), model.frame(snap), scores["churn_probability"].to_numpy())
     (reports / f"drift_{month}.json").write_text(json.dumps(drift, indent=2))
 
     n = scores.height
