@@ -1,5 +1,5 @@
 {
-  "model_version": "20260926165749",
+  "model_version": "20260926182253",
   "data": {
     "train_rows": 1563679,
     "valid_rows": 306628,
@@ -120,12 +120,12 @@
   },
   "timings_s": {
     "load raw tables": 0.2,
-    "build feature snapshots": 13.87,
-    "train LightGBM": 63.12,
-    "train logistic-regression baseline": 8.47,
-    "evaluate on out-of-time test month": 8.22,
-    "SHAP reason codes + campaign economics": 13.42,
-    "charts": 2.05,
-    "export artifacts": 1.35
+    "build feature snapshots": 17.62,
+    "train LightGBM": 63.47,
+    "train logistic-regression baseline": 8.64,
+    "evaluate on out-of-time test month": 7.54,
+    "SHAP reason codes + campaign economics": 12.61,
+    "charts": 1.85,
+    "export artifacts": 1.24
   }
 }
