@@ -4,13 +4,21 @@ from __future__ import annotations
 
 import calendar
 import copy
+import os
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-DEFAULT_CONFIG = Path(__file__).resolve().parents[2] / "configs" / "config.yaml"
+_REPO_CONFIG = Path(__file__).resolve().parents[2] / "configs" / "config.yaml"
+
+
+def _default_config() -> Path:
+    """$CHURN_CONFIG, else the repo's configs/config.yaml, else ./configs/config.yaml (installed package)."""
+    if env := os.getenv("CHURN_CONFIG"):
+        return Path(env)
+    return _REPO_CONFIG if _REPO_CONFIG.exists() else Path.cwd() / "configs" / "config.yaml"
 
 
 def load_config(path: str | Path | None = None, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -18,7 +26,7 @@ def load_config(path: str | Path | None = None, overrides: dict[str, Any] | None
 
     A config may start with `extends: <other.yaml>` (relative to itself) to override only what differs.
     """
-    path = Path(path or DEFAULT_CONFIG)
+    path = Path(path or _default_config())
     with open(path) as fh:
         cfg = yaml.safe_load(fh) or {}
     if base := cfg.pop("extends", None):
@@ -57,3 +65,21 @@ def month_end(month: date) -> date:
 
 def month_label(month: date) -> str:
     return f"{month.year:04d}-{month.month:02d}"
+
+
+def rolling_windows(as_of: str, n_train: int = 5, inactivity_months: int = 2) -> dict[str, object]:
+    """Out-of-time windows for a monthly retrain run with data complete through `as_of`.
+
+    The newest labelled month is the test month; validation is one label-window earlier; training
+    uses the `n_train` months before validation. As of 2025-12: train Mar-Jul, valid Aug, test Oct.
+    """
+    last = parse_month(as_of)
+    test = add_months(last, -inactivity_months)
+    valid = add_months(test, -inactivity_months)
+    train = [add_months(valid, -k) for k in range(n_train, 0, -1)]
+    return {
+        "train_cutoffs": [month_label(m) for m in train],
+        "valid_cutoff": month_label(valid),
+        "test_cutoff": month_label(test),
+        "score_cutoff": month_label(last),
+    }

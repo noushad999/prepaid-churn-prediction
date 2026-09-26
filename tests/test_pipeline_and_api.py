@@ -110,3 +110,32 @@ def test_backtest_measures_realised_performance(small_cfg, trained):
     assert report["realised"]["roc_auc"] > 0.75
     assert report["status"] in ("HEALTHY", "DEGRADED")
     assert report["campaign"] is not None and report["campaign"]["treated"] > 0
+
+
+def test_api_auth_metrics_and_reload(small_cfg, scores, monkeypatch):
+    monkeypatch.setenv("CHURN_API_KEYS", "k-one, k-two")
+    scores_path = Path(small_cfg["paths"]["scores_dir"]) / "scores_2025-12.parquet"
+    client = TestClient(create_app(small_cfg["paths"]["model_dir"], scores_path))
+
+    assert client.get("/health").status_code == 200  # liveness stays open
+    assert client.get("/health").json()["auth"] is True
+    assert client.get("/v1/model").status_code == 401
+    assert client.get("/v1/model", headers={"X-API-Key": "wrong"}).status_code == 401
+    ok = client.get("/v1/model", headers={"X-API-Key": "k-two", "X-Request-ID": "abc123"})
+    assert ok.status_code == 200 and ok.headers["X-Request-ID"] == "abc123"
+
+    test = pl.read_parquet(Path(small_cfg["paths"]["features_dir"]) / "test.parquet")
+    body = {
+        "subscribers": [
+            {"features": test.drop("sub_id", "snapshot", "churn").head(1).fill_nan(None).to_dicts()[0]}
+        ]
+    }
+    pred = client.post("/v1/predict", json=body, headers={"X-API-Key": "k-one"}).json()["predictions"][0]
+    assert pred["uplift"] is not None and isinstance(pred["sleeping_dog"], bool)
+
+    metrics = client.get("/metrics").text
+    assert 'churn_api_requests_total{endpoint="/v1/model",status="401"}' in metrics
+    assert "churn_predictions_total" in metrics
+
+    reloaded = client.post("/admin/reload", headers={"X-API-Key": "k-one"}).json()
+    assert reloaded["current"] == reloaded["previous"]

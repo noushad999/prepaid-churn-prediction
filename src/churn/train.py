@@ -20,6 +20,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from churn import evaluate as ev
 from churn import ingest
 from churn.campaign import campaign_summary, expected_net, profit_curve
+from churn.config import month_label, parse_month
 from churn.explain import FAMILY_LABELS, global_family_importance
 from churn.features import CATEGORICAL, LABEL, build_many, build_snapshot, feature_columns
 from churn.model import ChurnModel
@@ -260,8 +261,16 @@ def _train_uplift(
     Production policy ("risk + sleeping-dog guard"): rank by churn risk × value, but never contact a
     subscriber the X-learner predicts the offer would push out (negative uplift).
     """
-    ucfg, camp_cfg = cfg["uplift"], cfg["campaign"]
+    ucfg, camp_cfg = dict(cfg["uplift"]), cfg["campaign"]
     campaigns = tables["campaigns"]
+    if ucfg.get("auto"):
+        # rolling mode: every campaign whose outcome window has closed; newest is the test campaign
+        latest = parse_month(cfg["training"]["test_cutoff"])
+        months = sorted(m for m in campaigns["campaign_month"].unique().to_list() if m <= latest)
+        if len(months) < 2:
+            raise ValueError("Uplift needs at least two labelled campaigns in rolling mode")
+        ucfg["train_campaigns"] = [month_label(m) for m in months[:-1]]
+        ucfg["test_campaign"] = month_label(months[-1])
     fit_frames = []
     for month in ucfg["train_campaigns"]:
         snap = train.filter(pl.col("snapshot") == month)

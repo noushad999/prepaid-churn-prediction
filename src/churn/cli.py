@@ -14,7 +14,10 @@ def main(argv: list[str] | None = None) -> None:
     p_sim = sub.add_parser("simulate", help="Generate the synthetic operator data warehouse")
     p_sim.add_argument("--subscribers", type=int, default=None, help="Initial active base size")
     sub.add_parser("validate", help="Check the configured data source against the data contract")
-    sub.add_parser("train", help="Build snapshots, train + evaluate, export model and reports")
+    p_train = sub.add_parser("train", help="Build snapshots, train + evaluate, register model")
+    p_train.add_argument(
+        "--as-of", default=None, help="Last month with complete data (YYYY-MM): rolls all windows"
+    )
     p_score = sub.add_parser("score", help="Batch-score the active base for a month")
     p_score.add_argument(
         "--month", default=None, help="Snapshot month YYYY-MM (default: training.score_cutoff)"
@@ -40,6 +43,14 @@ def main(argv: list[str] | None = None) -> None:
     if getattr(args, "subscribers", None):
         overrides = {"simulation": {"n_subscribers": args.subscribers}}
     cfg = load_config(args.config, overrides)
+    if getattr(args, "as_of", None):
+        from churn.config import rolling_windows
+
+        cfg["training"].update(
+            rolling_windows(args.as_of, inactivity_months=cfg["churn"]["inactivity_months"])
+        )
+        if cfg.get("uplift"):
+            cfg["uplift"]["auto"] = True
     t0 = time.perf_counter()
 
     if args.command == "validate":
