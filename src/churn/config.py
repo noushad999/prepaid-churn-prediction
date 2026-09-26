@@ -14,9 +14,15 @@ DEFAULT_CONFIG = Path(__file__).resolve().parents[2] / "configs" / "config.yaml"
 
 
 def load_config(path: str | Path | None = None, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Load the YAML config and apply nested overrides such as {"simulation": {"n_subscribers": 1000}}."""
-    with open(path or DEFAULT_CONFIG) as fh:
-        cfg = yaml.safe_load(fh)
+    """Load the YAML config and apply nested overrides such as {"simulation": {"n_subscribers": 1000}}.
+
+    A config may start with `extends: <other.yaml>` (relative to itself) to override only what differs.
+    """
+    path = Path(path or DEFAULT_CONFIG)
+    with open(path) as fh:
+        cfg = yaml.safe_load(fh) or {}
+    if base := cfg.pop("extends", None):
+        cfg = _deep_merge(load_config(path.parent / base), cfg)
     if overrides:
         cfg = _deep_merge(cfg, overrides)
     return cfg

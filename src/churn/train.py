@@ -18,12 +18,12 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from churn import evaluate as ev
+from churn import ingest
 from churn.campaign import campaign_summary, expected_net, profit_curve
 from churn.explain import FAMILY_LABELS, global_family_importance
 from churn.features import CATEGORICAL, LABEL, build_many, build_snapshot, feature_columns
 from churn.model import ChurnModel
 from churn.monitor import build_reference, save_reference
-from churn.simulate import load_tables
 from churn.uplift import UpliftModel, campaign_frame, qini_curve, value_curve
 from churn.uplift import evaluate as evaluate_uplift
 
@@ -78,8 +78,12 @@ def run(cfg: dict) -> dict:
     snap_kw = dict(lookback_months=ccfg["lookback_months"], inactivity_months=ccfg["inactivity_months"])
 
     print("Training churn model")
-    with timer("load raw tables"):
-        tables = load_tables(paths["raw_dir"])
+    with timer("load + validate data (contract)"):
+        tables, dq = ingest.load(cfg)
+        dq.save(reports / "data_quality.json")
+        print(
+            f"  data contract: {'PASS' if dq.ok else 'FAIL'}, {len(dq.issues)} issue(s) -> reports/data_quality.json"
+        )
     with timer("build feature snapshots"):
         train = build_many(tables, tcfg["train_cutoffs"], **snap_kw)
         valid = build_snapshot(tables, tcfg["valid_cutoff"], **snap_kw)

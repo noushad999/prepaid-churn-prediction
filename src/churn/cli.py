@@ -13,6 +13,7 @@ def main(argv: list[str] | None = None) -> None:
 
     p_sim = sub.add_parser("simulate", help="Generate the synthetic operator data warehouse")
     p_sim.add_argument("--subscribers", type=int, default=None, help="Initial active base size")
+    sub.add_parser("validate", help="Check the configured data source against the data contract")
     sub.add_parser("train", help="Build snapshots, train + evaluate, export model and reports")
     p_score = sub.add_parser("score", help="Batch-score the active base for a month")
     p_score.add_argument(
@@ -35,6 +36,15 @@ def main(argv: list[str] | None = None) -> None:
     cfg = load_config(args.config, overrides)
     t0 = time.perf_counter()
 
+    if args.command == "validate":
+        from pathlib import Path
+
+        from churn import ingest
+
+        _, report = ingest.load(cfg, strict=False)
+        print(report.summary())
+        report.save(Path(cfg["paths"]["reports_dir"]) / "data_quality.json")
+        raise SystemExit(0 if report.ok else 1)
     if args.command in ("simulate", "pipeline"):
         from churn import simulate
 

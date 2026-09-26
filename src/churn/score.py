@@ -9,11 +9,11 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
+from churn import ingest
 from churn.campaign import expected_net
 from churn.features import build_snapshot
 from churn.model import ChurnModel
 from churn.monitor import drift_report, load_reference
-from churn.simulate import load_tables
 from churn.uplift import UpliftModel
 
 
@@ -99,7 +99,8 @@ def run(cfg: dict, month: str | None = None) -> pl.DataFrame:
 
     t0 = time.perf_counter()
     model = ChurnModel.load(paths["model_dir"])
-    tables = load_tables(paths["raw_dir"])
+    tables, dq = ingest.load(cfg)
+    dq.save(reports / f"data_quality_{month}.json")
     t_load = time.perf_counter()
     snap = build_snapshot(tables, month, lookback_months=cfg["churn"]["lookback_months"], with_label=False)
     t_feat = time.perf_counter()

@@ -426,11 +426,13 @@ def write_tables(tables: dict[str, pl.DataFrame], raw_dir: str | Path) -> None:
 
 def load_tables(raw_dir: str | Path) -> dict[str, pl.DataFrame]:
     raw_dir = Path(raw_dir)
-    names = list(TABLES)
-    missing = [n for n in names if not (raw_dir / f"{n}.parquet").exists()]
+    required = ["subscribers", "usage_monthly", "recharges", "network_market"]
+    missing = [n for n in required if not (raw_dir / f"{n}.parquet").exists()]
     if missing:
         raise FileNotFoundError(f"Missing tables {missing} in {raw_dir}. Run `churn simulate` first.")
-    return {n: pl.read_parquet(raw_dir / f"{n}.parquet") for n in names}
+    return {
+        n: pl.read_parquet(raw_dir / f"{n}.parquet") for n in TABLES if (raw_dir / f"{n}.parquet").exists()
+    }
 
 
 def run(cfg: dict) -> dict[str, pl.DataFrame]:
