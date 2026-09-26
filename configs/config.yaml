@@ -45,11 +45,18 @@ training:
 campaign:
   currency: BDT
   contact_cost: 2.0            # SMS / OBD / push cost per targeted subscriber
-  offer_cost: 40.0             # value of the retention bonus (e.g. data pack)
+  offer_cost: 15.0             # marginal cost of the retention bonus (e.g. bonus data pack)
   offer_redeem_rate: 0.6       # share of targeted subscribers who redeem the bonus
   save_rate: 0.30              # share of true would-be churners retained by the offer
   margin: 0.55                 # contribution margin on ARPU
   clv_months: 6                # value horizon of a saved subscriber
+  holdout_share: 0.10          # random share of every campaign list kept as untreated control
+
+uplift:
+  # Randomised test-and-learn campaigns (50% treatment / 50% holdout). Fit on earlier campaigns,
+  # evaluate on a later one: the same out-of-time discipline as the churn model.
+  train_campaigns: ["2025-04", "2025-06"]
+  test_campaign: "2025-09"
 
 risk_bands:                    # share of the scored base (by rank) assigned to each band
   critical: 0.05

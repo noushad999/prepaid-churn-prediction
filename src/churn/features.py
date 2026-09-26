@@ -7,6 +7,9 @@ data up to the last day of T. The label looks strictly forward:
 
 This is the standard prepaid definition (60-90 days of zero revenue-generating activity). There
 is no "churn flag" column to cheat with: churn is observed as silence.
+
+Optional sources enrich the snapshot when present: per-operator off-net minutes (competitor
+pressure) and the CDR contact graph (social contagion: contacts who recently went silent).
 """
 
 from __future__ import annotations
@@ -31,7 +34,8 @@ SUM_METRICS = [
 MEAN_METRICS = ["drop_call_rate", "data_speed_mbps"]
 TREND_METRICS = ["revenue", "voice_min", "data_mb", "days_active", "data_pack_cnt"]
 
-CATEGORICAL = ["division", "gender", "plan_type", "handset"]
+COMPETITOR_COLS = ["offnet_robi_min", "offnet_banglalink_min", "offnet_teletalk_min"]
+CATEGORICAL = ["division", "gender", "plan_type", "handset", "top_competitor"]
 KEY = ["sub_id", "snapshot"]
 LABEL = "churn"
 
@@ -67,7 +71,21 @@ def build_snapshot(
         aggs.append(pl.col(m).mean().alias(f"{m}_avg{lookback_months}m"))
     aggs.append(pl.col("last_active_day").filter(pl.col("mb") == 0).first().alias("last_active_day_m0"))
     aggs.append((pl.col("onnet_min").sum() / (pl.col("voice_min").sum() + 1e-6)).alias("onnet_share"))
+    has_competitor = all(c in usage.columns for c in COMPETITOR_COLS)
+    if has_competitor:
+        lb = lb.with_columns(competitor_min=pl.sum_horizontal(COMPETITOR_COLS))
+        for k in range(lookback_months):
+            in_k = pl.col("mb") == k
+            aggs.append(
+                (
+                    pl.col("competitor_min").filter(in_k).sum() / (pl.col("voice_min").filter(in_k).sum() + 1)
+                ).alias(f"competitor_share_m{k}")
+            )
+        for c in COMPETITOR_COLS:
+            aggs.append(pl.col(c).sum().alias(f"_{c}"))
     usage_feats = lb.join(active, on="sub_id", how="semi").group_by("sub_id").agg(aggs)
+    if has_competitor:
+        usage_feats = _competitor_features(usage_feats, lookback_months)
 
     df = (
         active.join(subs, on="sub_id", how="left")
@@ -104,6 +122,8 @@ def build_snapshot(
 
     df = df.join(_recharge_features(tables["recharges"], cut_end), on="sub_id", how="left")
     df = df.join(_market_features(tables["network_market"], cut, lookback_months), on="division", how="left")
+    if tables.get("contacts") is not None:
+        df = df.join(_graph_features(tables["contacts"], usage, cut), on="sub_id", how="left")
 
     if with_label:
         horizon_end = add_months(cut, inactivity_months)
@@ -177,6 +197,49 @@ def _recharge_features(recharges: pl.DataFrame, cut_end: datetime) -> pl.DataFra
         rch_amt_30d=pl.col("rch_amt_30d").fill_null(0),
         rch_cnt_90d=pl.col("rch_cnt_90d").fill_null(0),
         rch_amt_90d=pl.col("rch_amt_90d").fill_null(0),
+    )
+
+
+def _competitor_features(usage_feats: pl.DataFrame, lookback_months: int) -> pl.DataFrame:
+    op_cols = [f"_{c}" for c in COMPETITOR_COLS]
+    names = [c.removeprefix("offnet_").removesuffix("_min") for c in COMPETITOR_COLS]
+    total = pl.sum_horizontal(op_cols)
+    prev = pl.mean_horizontal([pl.col(f"competitor_share_m{k}") for k in range(1, lookback_months)])
+    return usage_feats.with_columns(
+        competitor_share_trend=pl.col("competitor_share_m0") - prev,
+        top_competitor_share=pl.max_horizontal(op_cols) / (total + 1e-6),
+        top_competitor=pl.when(total <= 0)
+        .then(None)
+        .otherwise(
+            pl.concat_list(op_cols)
+            .list.arg_max()
+            .replace_strict(dict(enumerate(names)), return_dtype=pl.Utf8)
+        ),
+    ).drop(op_cols)
+
+
+def _graph_features(contacts: pl.DataFrame, usage: pl.DataFrame, cut: date) -> pl.DataFrame:
+    """Social contagion from the CDR contact graph, using only activity observed up to the cutoff.
+
+    A contact counts as *gone* when they were active 2-3 months ago but silent in both of the
+    last two months (T-1 and T): the same silence a churn label would later confirm.
+    """
+    months = [add_months(cut, -k) for k in range(4)]
+    seen = usage.filter(pl.col("month").is_in(months)).select("sub_id", "month")
+    status = seen.group_by("sub_id").agg(
+        recent=pl.col("month").is_in(months[:2]).any(),
+        earlier=pl.col("month").is_in(months[2:]).any(),
+        active_m0=(pl.col("month") == months[0]).any(),
+    )
+    edges = contacts.join(status.rename({"sub_id": "contact_id"}), on="contact_id", how="left").with_columns(
+        gone=(pl.col("earlier").fill_null(False) & ~pl.col("recent").fill_null(False)),
+        active_m0=pl.col("active_m0").fill_null(False),
+    )
+    return edges.group_by("sub_id").agg(
+        contacts_n=pl.len().cast(pl.Int16),
+        contacts_active_share=pl.col("active_m0").mean(),
+        contacts_gone_n=pl.col("gone").sum().cast(pl.Int16),
+        contacts_gone_share=(pl.col("minutes") * pl.col("gone")).sum() / pl.col("minutes").sum(),
     )
 
 

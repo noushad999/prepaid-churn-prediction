@@ -77,3 +77,30 @@ def test_psi_detects_shift():
     shifted_X = pd.DataFrame({"x": rng.normal(1.5, 1, 20000), "c": pd.Categorical(["a"] * 20000)})
     shifted = drift_report(ref, shifted_X, rng.random(20000) ** 3)
     assert shifted["n_major"] == 2 and shifted["score_status"] == "major"
+
+
+def test_qini_rewards_true_uplift_ranking():
+    from churn.uplift import evaluate as evaluate_uplift
+    from churn.uplift import qini_curve
+
+    rng = np.random.default_rng(3)
+    n = 40_000
+    true_uplift = rng.uniform(-0.05, 0.15, n)
+    t = (rng.random(n) < 0.5).astype(int)
+    base = 0.2
+    y = (rng.random(n) < base - t * true_uplift).astype(int)
+    res = evaluate_uplift(y, t, {"oracle": true_uplift, "random": rng.random(n)})
+    r = res["rankings"]
+    assert r["oracle"]["qini_coefficient"] > r["random"]["qini_coefficient"]
+    assert r["oracle"]["prevented_per_1000_top10"] > 100  # top decile has uplift ~0.13
+    x, q = qini_curve(y, t, true_uplift)
+    assert x[0] == 0 and x[-1] == pytest.approx(1.0) and q.argmax() < len(q) - 1  # sleeping dogs at the end
+
+
+def test_value_curve_counts_contact_cost():
+    from churn.uplift import value_curve
+
+    y = np.zeros(1000, int)
+    t = np.tile([0, 1], 500)
+    x, v = value_curve(y, t, np.arange(1000.0), np.full(1000, 100.0), cost=10.0)
+    assert v[-1] == pytest.approx(-10.0 * 1000)  # nobody churns: pure cost

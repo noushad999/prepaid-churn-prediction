@@ -51,6 +51,7 @@ def test_features_do_not_leak_future_data(tables):
         "usage_monthly": tables["usage_monthly"].filter(pl.col("month") <= date(2025, 6, 1)),
         "recharges": tables["recharges"].filter(pl.col("ts") <= cut_end),
         "network_market": tables["network_market"].filter(pl.col("month") <= date(2025, 6, 1)),
+        "campaigns": tables["campaigns"].filter(pl.col("campaign_month") <= date(2025, 6, 1)),
     }
     past_only = build_snapshot(truncated, cutoff, with_label=False)
     assert full.equals(past_only)
@@ -144,3 +145,39 @@ def test_feature_set_is_stable(tables):
     a = feature_columns(build_snapshot(tables, "2025-04"))
     b = feature_columns(build_snapshot(tables, "2025-09"))
     assert a == b and len(a) > 60
+
+
+def test_graph_and_competitor_features_present_and_sane(tables):
+    snap = build_snapshot(tables, "2025-07")
+    for col in (
+        "contacts_gone_share",
+        "contacts_n",
+        "competitor_share_m0",
+        "competitor_share_trend",
+        "top_competitor",
+    ):
+        assert col in snap.columns
+    assert snap["contacts_gone_share"].drop_nulls().is_between(0, 1).all()
+    assert snap["competitor_share_m0"].drop_nulls().is_between(0, 1).all()
+    assert set(snap["top_competitor"].drop_nulls().unique()) <= {"robi", "banglalink", "teletalk"}
+    # churners call competitors more and have lost more contacts, on average
+    g = snap.group_by("churn").agg(pl.col("competitor_share_m0").mean(), pl.col("contacts_gone_share").mean())
+    g = {r["churn"]: r for r in g.iter_rows(named=True)}
+    assert g[1]["competitor_share_m0"] > g[0]["competitor_share_m0"]
+    assert g[1]["contacts_gone_share"] > g[0]["contacts_gone_share"]
+
+
+def test_optional_sources_can_be_absent(tables):
+    minimal = {k: v for k, v in tables.items() if k not in ("contacts", "campaigns")}
+    minimal["usage_monthly"] = tables["usage_monthly"].drop(
+        "offnet_robi_min", "offnet_banglalink_min", "offnet_teletalk_min"
+    )
+    snap = build_snapshot(minimal, "2025-05")
+    assert "contacts_n" not in snap.columns and "competitor_share_m0" not in snap.columns
+    assert snap.height > 1000
+
+
+def test_campaigns_are_randomised(tables):
+    c = tables["campaigns"]
+    share = c.group_by("campaign_month").agg(pl.col("treatment").mean())["treatment"]
+    assert share.is_between(0.45, 0.55).all()

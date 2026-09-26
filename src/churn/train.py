@@ -24,6 +24,8 @@ from churn.features import CATEGORICAL, LABEL, build_many, build_snapshot, featu
 from churn.model import ChurnModel
 from churn.monitor import build_reference, save_reference
 from churn.simulate import load_tables
+from churn.uplift import UpliftModel, campaign_frame, qini_curve, value_curve
+from churn.uplift import evaluate as evaluate_uplift
 
 
 class Timer:
@@ -54,11 +56,12 @@ def _to_pandas(df: pl.DataFrame, features: list[str], categories: dict[str, list
 def _logreg_baseline(X_tr: pd.DataFrame, y_tr: np.ndarray, seed: int, max_rows: int = 300_000):
     rng = np.random.default_rng(seed)
     idx = rng.choice(len(X_tr), min(max_rows, len(X_tr)), replace=False)
-    num = [c for c in X_tr.columns if c not in CATEGORICAL]
+    cats = [c for c in CATEGORICAL if c in X_tr.columns]
+    num = [c for c in X_tr.columns if c not in cats]
     pre = ColumnTransformer(
         [
             ("num", make_pipeline(SimpleImputer(strategy="median"), StandardScaler()), num),
-            ("cat", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL),
+            ("cat", OneHotEncoder(handle_unknown="ignore"), cats),
         ]
     )
     model = make_pipeline(pre, LogisticRegression(max_iter=500, C=0.5))
@@ -85,7 +88,8 @@ def run(cfg: dict) -> dict:
             df.write_parquet(Path(paths["features_dir"]) / f"{name}.parquet")
 
     features = feature_columns(train)
-    categories = {c: sorted(train[c].drop_nulls().unique().to_list()) for c in CATEGORICAL}
+    cat_features = [c for c in CATEGORICAL if c in features]
+    categories = {c: sorted(train[c].drop_nulls().unique().to_list()) for c in cat_features}
     X_tr, X_va, X_te = (_to_pandas(d, features, categories) for d in (train, valid, test))
     y_tr, y_va, y_te = (d[LABEL].to_numpy() for d in (train, valid, test))
     print(
@@ -96,9 +100,9 @@ def run(cfg: dict) -> dict:
     with timer("train LightGBM"):
         booster = lgb.train(
             tcfg["lgbm"] | {"seed": cfg["seed"]},
-            lgb.Dataset(X_tr, y_tr, categorical_feature=CATEGORICAL, free_raw_data=False),
+            lgb.Dataset(X_tr, y_tr, categorical_feature=cat_features, free_raw_data=False),
             num_boost_round=tcfg["num_boost_round"],
-            valid_sets=[lgb.Dataset(X_va, y_va, categorical_feature=CATEGORICAL)],
+            valid_sets=[lgb.Dataset(X_va, y_va, categorical_feature=cat_features)],
             callbacks=[lgb.early_stopping(tcfg["early_stopping_rounds"], verbose=False)],
         )
     with timer("train logistic-regression baseline"):
@@ -142,6 +146,14 @@ def run(cfg: dict) -> dict:
             "Rule: days since recharge": profit_curve(y_te, p_rule, arpu, camp_cfg),
             "Random targeting": profit_curve(y_te, rng.random(len(y_te)), arpu, camp_cfg),
         }
+
+    uplift_results = None
+    if tables.get("campaigns") is not None and cfg.get("uplift"):
+        with timer("uplift model on randomised campaigns"):
+            uplift_results, uplift_model = _train_uplift(
+                cfg, tables, train, snap_kw, features, categories, booster, reports
+            )
+            uplift_model.save(paths["model_dir"])
 
     with timer("charts"):
         ev.plot_roc_pr(y_te, scores, reports / "roc_pr.png")
@@ -193,11 +205,90 @@ def run(cfg: dict) -> dict:
         "driver_importance": family_importance,
         "top_features_gain": dict(top_features),
         "campaign_test": campaign,
+        "uplift_test": uplift_results,
         "timings_s": timer.marks,
     }
     (reports / "metrics.json").write_text(json.dumps(results, indent=2))
     _print_summary(results, gains, camp_cfg["currency"])
     return results
+
+
+def _train_uplift(
+    cfg, tables, train, snap_kw, features, categories, booster, reports
+) -> tuple[dict, UpliftModel]:
+    """Fit uplift learners on earlier randomised campaigns; evaluate policies out-of-time on a later one.
+
+    Production policy ("risk + sleeping-dog guard"): rank by churn risk × value, but never contact a
+    subscriber the X-learner predicts the offer would push out (negative uplift).
+    """
+    ucfg, camp_cfg = cfg["uplift"], cfg["campaign"]
+    campaigns = tables["campaigns"]
+    fit_frames = []
+    for month in ucfg["train_campaigns"]:
+        snap = train.filter(pl.col("snapshot") == month)
+        if snap.height == 0:
+            snap = build_snapshot(tables, month, **snap_kw)
+        fit_frames.append(campaign_frame(snap, campaigns, month))
+    fit = pl.concat(fit_frames, how="vertical_relaxed")
+    test = campaign_frame(
+        build_snapshot(tables, ucfg["test_campaign"], **snap_kw), campaigns, ucfg["test_campaign"]
+    )
+
+    X_fit, X_test = (_to_pandas(d, features, categories) for d in (fit, test))
+    t_fit, t_test = (d["treatment"].cast(pl.Int8).to_numpy() for d in (fit, test))
+    y_fit, y_test = (d[LABEL].to_numpy() for d in (fit, test))
+    model = UpliftModel.fit(X_fit, t_fit, y_fit, learner="x", seed=cfg["seed"])
+    model.metadata.update(
+        {"train_campaigns": ucfg["train_campaigns"], "test_campaign": ucfg["test_campaign"]}
+    )
+    t_learner = UpliftModel.fit(X_fit, t_fit, y_fit, learner="t", seed=cfg["seed"])
+
+    uplift = model.predict(X_test)
+    risk = booster.predict(X_test)
+    guarded = np.where(uplift > 0, risk, -1.0)
+    rand = np.random.default_rng(cfg["seed"]).random(len(y_test))
+    results = evaluate_uplift(
+        y_test,
+        t_test,
+        {
+            "Risk + sleeping-dog guard": guarded,
+            "Uplift: X-learner": uplift,
+            "Uplift: T-learner": t_learner.predict(X_test),
+            "Churn risk only": risk,
+            "Random": rand,
+        },
+    )
+    results["sleeping_dog_share"] = float((uplift <= 0).mean())
+    # economics: rank by expected value, measure realised incremental value on the randomised test
+    value = camp_cfg["margin"] * test["revenue_avg3m"].to_numpy() * camp_cfg["clv_months"]
+    cost = camp_cfg["contact_cost"] + camp_cfg["offer_redeem_rate"] * camp_cfg["offer_cost"]
+    rankings = {
+        "Risk × value + sleeping-dog guard": np.where(uplift > 0, risk * value, -1.0),
+        "Churn risk × value": risk * value,
+        "Uplift × value": uplift * value,
+        "Random": rand,
+    }
+    profit = {name: value_curve(y_test, t_test, score, value, cost) for name, score in rankings.items()}
+    results["profit_best"] = {
+        name: {"best_share": float(x[np.argmax(v)]), "best_net_value": float(v.max())}
+        for name, (x, v) in profit.items()
+    }
+    qini = {
+        name: qini_curve(y_test, t_test, sc)
+        for name, sc in (
+            ("Risk + sleeping-dog guard", guarded),
+            ("Churn risk only", risk),
+            ("Uplift: X-learner", uplift),
+            ("Random", rand),
+        )
+    }
+    ev.plot_uplift(
+        qini,
+        {k: v for k, v in profit.items() if k != "Uplift × value"},
+        camp_cfg["currency"],
+        reports / "uplift.png",
+    )
+    return results, model
 
 
 def _print_summary(results: dict, gains: pd.DataFrame, currency: str) -> None:
@@ -215,3 +306,17 @@ def _print_summary(results: dict, gains: pd.DataFrame, currency: str) -> None:
         f"\nCampaign: target {c['policy_targets']:,} ({c['policy_target_share']:.1%}) -> net "
         f"{c['policy_profit']:,.0f} {currency} vs random same size {c['random_targeting_profit_same_k']:,.0f} {currency}"
     )
+    u = results.get("uplift_test")
+    if u:
+        print(
+            f"\nUplift (out-of-time campaign, {u['n']:,} subs, avg effect {u['average_effect_per_1000']:.1f}/1000)"
+        )
+        for name, r in u["rankings"].items():
+            print(
+                f"  {name:<28} Qini {r['qini_coefficient']:>7.2f}   prevented/1000 top10% "
+                f"{r['prevented_per_1000_top10']:>6.1f}   top30% {r['prevented_per_1000_top30']:>6.1f}"
+            )
+        for name, r in u["profit_best"].items():
+            print(
+                f"  best campaign by {name:<22} net {r['best_net_value']:>12,.0f} {currency} at {r['best_share']:.0%}"
+            )

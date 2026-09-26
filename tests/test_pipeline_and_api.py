@@ -34,6 +34,16 @@ def test_batch_scores(scores):
     assert targets.height > 0
     assert targets["recommended_action"].null_count() == 0  # every targeted sub gets an action
     assert targets["primary_driver"].null_count() == 0
+    assert not (targets["sleeping_dog"]).any()  # guard: never contact predicted sleeping dogs
+    holdout = targets["arm"] == "holdout"
+    assert 0.03 < holdout.mean() < 0.2  # ~10% of every campaign is held out to measure ROI
+
+
+def test_uplift_trained_and_reported(trained, small_cfg):
+    u = trained["uplift_test"]
+    assert u is not None and "Risk + sleeping-dog guard" in u["rankings"]
+    assert (Path(small_cfg["paths"]["model_dir"]) / "uplift_metadata.json").exists()
+    assert (Path(small_cfg["paths"]["reports_dir"]) / "uplift.png").exists()
 
 
 def test_model_handles_missing_and_unknown_inputs(small_cfg, trained):

@@ -258,3 +258,55 @@ def plot_profit(
     )
     _legend(ax, loc="lower left")
     _save(fig, path)
+
+
+def plot_uplift(
+    qini: dict[str, tuple[np.ndarray, np.ndarray]],
+    profit: dict[str, tuple[np.ndarray, np.ndarray]],
+    currency: str,
+    path: Path,
+) -> None:
+    fig, (a1, a2) = _figure(2)
+    fig.subplots_adjust(wspace=0.3)
+    for (name, (x, q)), color in zip(qini.items(), SERIES + [MUTED], strict=False):
+        dashed = name.startswith("Random")
+        a1.plot(
+            x * 100,
+            q,
+            color=MUTED if dashed else color,
+            lw=1 if dashed else 2,
+            ls=(0, (3, 3)) if dashed else "-",
+            label=name,
+        )
+    for (name, (x, v)), color in zip(profit.items(), SERIES + [MUTED], strict=False):
+        dashed = name.startswith("Random")
+        a2.plot(
+            x * 100,
+            v / 1e3,
+            color=MUTED if dashed else color,
+            lw=1 if dashed else 2,
+            ls=(0, (3, 3)) if dashed else "-",
+            label=name,
+        )
+    a2.axhline(0, color=INK_2, lw=1)
+    _style(
+        a1,
+        "Qini curve",
+        "% of campaign population treated, best first",
+        "Churners prevented",
+        "Randomised campaign, out-of-time · higher is better",
+    )
+    _style(
+        a2,
+        "Campaign value by targeting rule",
+        "% of campaign population treated",
+        f"Net value (thousand {currency})",
+        "Realised incremental value minus contact and offer cost",
+    )
+    visible = [v[x <= 0.2] / 1e3 for x, v in profit.values()]
+    lo, hi = min(v.min() for v in visible), max(v.max() for v in visible)
+    a2.set_xlim(0, 20)
+    a2.set_ylim(lo - 0.08 * (hi - lo), hi + 0.25 * (hi - lo))
+    _legend(a1, loc="lower right")
+    _legend(a2, loc="lower left")
+    _save(fig, path)

@@ -9,14 +9,21 @@ rather than random labels:
                              active days, complaints, experienced call-drop rate, data speed ...)
 * ``recharges``              one row per top-up transaction (timestamp, amount, channel)
 * ``network_market``         one row per division-month: network KPIs + competitor promo flag
+* ``contacts``               top on-net contacts per subscriber from CDRs (who calls whom, minutes)
+* ``campaigns``              randomised retention test-and-learn campaigns (treatment vs holdout)
 
 Each month, a subscriber's hazard of *starting to disengage* depends on
 tenure (early-life churn), engagement, multi-SIM behaviour, accumulated dissatisfaction
 (call drops, complaints), competitor promotions, a July tariff hike (price-sensitive users),
-on-net community share, plan type and self-care app adoption. Disengaging subscribers
+on-net community share, plan type and self-care app adoption, *churn contagion* (contacts who
+recently left) and affinity to a competitor network. Disengaging subscribers
 wind usage and recharges down over 0-3 months, then go silent. That silence is what the
 60-day inactivity label picks up. Some recover, and some churn abruptly with no warning,
 so the problem is realistically hard.
+
+Retention campaigns have heterogeneous effects: price-sensitive, dissatisfied and new subscribers
+are *persuadable*, while long-tenure disengaged users are *sleeping dogs* whom an offer reminds
+to leave. That makes uplift modelling (who to treat) a different problem from churn scoring.
 """
 
 from __future__ import annotations
@@ -26,6 +33,7 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
+from scipy import sparse
 
 from churn.config import add_months, parse_month
 
@@ -35,6 +43,10 @@ URBAN_P = np.array([0.65, 0.45, 0.30, 0.30, 0.22, 0.25, 0.30, 0.25])
 DIVISION_DROP_BASE = np.array([0.011, 0.012, 0.013, 0.013, 0.015, 0.014, 0.017, 0.016])
 HANDSETS = ["feature_phone", "smartphone_3g", "smartphone_4g"]
 CHANNELS = ["retailer", "mfs", "app", "card"]
+COMPETITORS = ["robi", "banglalink", "teletalk"]
+COMPETITOR_P = np.array([0.47, 0.43, 0.10])
+CAMPAIGN_MONTHS = (4, 6, 9)  # randomised test-and-learn campaigns, sent after these snapshot months
+CAMPAIGN_ELIGIBLE_SHARE = 0.30
 DENOMINATIONS = np.array([10, 20, 29, 30, 49, 50, 69, 99, 100, 149, 199, 249, 299, 399, 499, 699, 999])
 EID_MONTHS = {3: 1.12, 6: 1.10}  # Eid-ul-Fitr / Eid-ul-Adha (2025) usage bump
 TARIFF_HIKE_MONTH = 7  # new fiscal-year duty on mobile services takes effect in July
@@ -90,6 +102,11 @@ def simulate(
     arpu_scale = rng.lognormal(0, 0.45, n)
     onnet_pref = rng.beta(5, 4, n)
     frailty = rng.normal(0, 0.45, n)  # unobserved churn propensity
+    top_comp = rng.choice(len(COMPETITORS), n, p=COMPETITOR_P)
+    comp_affinity = rng.beta(2, 5, n)  # share of off-net calls going to the favourite competitor
+
+    # ----------------------------------------------------- contact graph (top CDR contacts)
+    contacts, adjacency = _contact_graph(rng, division, n)
 
     # ------------------------------------------------------------ division-month context
     drop_base = DIVISION_DROP_BASE[:, None] * rng.lognormal(0, 0.12, (8, months + 1))
@@ -103,7 +120,10 @@ def simulate(
     dis_len = np.zeros(n, np.int8)
     dis_step = np.zeros(n, np.int8)
     dissat = np.zeros(n)
-    usage_parts, recharge_parts, market_rows = [], [], []
+    churn_month = np.full(n, 10_000, np.int32)
+    treat_until = np.zeros(n, np.int32)
+    treat_effect = np.zeros(n)
+    usage_parts, recharge_parts, market_rows, campaign_parts = [], [], [], []
 
     for t in range(1, months + 1):
         mstart = month_starts[t - 1]
@@ -119,8 +139,12 @@ def simulate(
 
         promo_now = promo[division, t]
         hike = 1.0 if t in (TARIFF_HIKE_MONTH, TARIFF_HIKE_MONTH + 1) else 0.0
+        # contagion: weighted share of my contacts who went silent in the last three months
+        gone_recent = ((churn_month >= t - 3) & (churn_month <= t - 1)).astype(np.float64)
+        contacts_gone = adjacency @ gone_recent
+        treated_now = treat_until >= t
         logit = (
-            -3.85
+            -4.1
             + 1.7 * (tenure <= 2)
             + 0.6 * ((tenure > 2) & (tenure <= 12))
             - 0.35 * z_eng
@@ -134,16 +158,22 @@ def simulate(
             - 0.2 * mfs_user
             - 1.8 * (onnet_pref - 0.55)
             + 0.25 * (handset == 0)
+            + 2.2 * contacts_gone
+            + 1.6 * (comp_affinity - 0.28)
+            - treated_now * treat_effect
             + frailty
         )
 
         # disengaging subscribers progress, may recover, or go silent
         dis = status == 2
-        recover = dis & (rng.random(n) < 0.10)
+        recover_p = 0.10 + 0.5 * treated_now * np.clip(treat_effect, 0, 1)
+        recover = dis & (rng.random(n) < recover_p)
         status[recover] = 1
         dis = status == 2
         dis_step[dis] += 1
-        status[dis & (dis_step > dis_len)] = 3
+        gone = dis & (dis_step > dis_len)
+        status[gone] = 3
+        churn_month[gone] = t
 
         # new disengagement starts; ~25 % are abrupt (no wind-down)
         start_now = (status == 1) & (rng.random(n) < _sigmoid(logit))
@@ -152,6 +182,7 @@ def simulate(
         idx = np.flatnonzero(start_now)
         dis_len[idx], dis_step[idx] = lens, 1
         status[idx] = np.where(lens == 0, 3, 2)
+        churn_month[idx[lens == 0]] = t
 
         live = (status == 1) | (status == 2)
         mult = np.where(status == 2, 1 - dis_step / (dis_len + 1.0), 1.0)
@@ -170,7 +201,23 @@ def simulate(
 
         voice = np.exp(4.5 + 0.45 * ze + 0.35 * la + 0.4 * (hs == 0)) * noise * m * season
         voice *= rng.lognormal(0, 0.15, rows.size)
-        onnet = voice * np.clip(onnet_pref[rows] + rng.normal(0, 0.05, rows.size), 0, 1)
+        # leavers route more of their remaining calls to the network they are moving to
+        onnet_frac = np.clip(
+            onnet_pref[rows] - 0.12 * disen_like(status[rows], dormant) + rng.normal(0, 0.05, rows.size), 0, 1
+        )
+        onnet = voice * onnet_frac
+        offnet = voice - onnet
+        top_share = np.clip(
+            comp_affinity[rows] + 0.2 * disen_like(status[rows], dormant) + rng.normal(0, 0.04, rows.size),
+            0,
+            1,
+        )
+        comp_min = np.zeros((rows.size, len(COMPETITORS)), np.float32)
+        comp_min[np.arange(rows.size), top_comp[rows]] = offnet * top_share
+        rest = offnet * (1 - top_share)
+        for c in range(len(COMPETITORS)):
+            other = top_comp[rows] != c
+            comp_min[other, c] = rest[other] * COMPETITOR_P[c] / (1 - COMPETITOR_P[top_comp[rows][other]])
         data_mu = np.select([hs == 0, hs == 1], [1.0 + 0.3 * ze, 6.3 + 0.6 * ze], 7.9 + 0.6 * ze + 0.3 * la)
         data_mb = np.exp(data_mu) * noise * m**1.4 * season * shift * rng.lognormal(0, 0.3, rows.size)
         speed_base = np.select([hs == 0, hs == 1], [np.nan, 3.0], 18.0)
@@ -205,6 +252,7 @@ def simulate(
                     "month": pl.Series([mstart] * rows.size, dtype=pl.Date),
                     "voice_min": voice.astype(np.float32),
                     "onnet_min": onnet.astype(np.float32),
+                    **{f"offnet_{c}_min": comp_min[:, i] for i, c in enumerate(COMPETITORS)},
                     "data_mb": data_mb.astype(np.float32),
                     "sms_cnt": sms.astype(np.int16),
                     "data_pack_cnt": packs.astype(np.int16),
@@ -256,6 +304,25 @@ def simulate(
             )
         )
 
+        if t in CAMPAIGN_MONTHS:
+            eligible = rows[rng.random(rows.size) < CAMPAIGN_ELIGIBLE_SHARE]
+            treated = rng.random(eligible.size) < 0.5
+            tr = eligible[treated]
+            treat_until[tr] = t + 2
+            treat_effect[tr] = _treatment_effect(
+                price_sens[tr], dissat[tr], tenure[tr], z_eng[tr], comp_affinity[tr], contacts_gone[tr]
+            )
+            campaign_parts.append(
+                pl.DataFrame(
+                    {
+                        "campaign_month": pl.Series([mstart] * eligible.size, dtype=pl.Date),
+                        "sub_id": eligible.astype(np.int32),
+                        "treatment": treated,
+                        "offer": "recharge_bonus",
+                    }
+                )
+            )
+
         for d, name in enumerate(DIVISIONS):
             market_rows.append(
                 {
@@ -300,7 +367,54 @@ def simulate(
         "usage_monthly": usage,
         "recharges": recharges,
         "network_market": pl.DataFrame(market_rows),
+        "contacts": contacts,
+        "campaigns": pl.concat(campaign_parts),
     }
+
+
+def disen_like(status_rows: np.ndarray, dormant: np.ndarray) -> np.ndarray:
+    return ((status_rows == 2) | dormant).astype(np.float64)
+
+
+def _treatment_effect(price_sens, dissat, tenure, z_eng, comp_affinity, contacts_gone) -> np.ndarray:
+    """Reduction in churn log-odds from a retention offer; negative = the offer backfires.
+
+    Persuadables: price-sensitive, dissatisfied or new subscribers. Lost causes: subscribers whose
+    calling circle already sits on a competitor network barely respond. Sleeping dogs: settled,
+    long-tenure, low-engagement subscribers whom a contact reminds to leave.
+    """
+    persuadable = 0.7 / (1 + np.exp(-2.5 * (price_sens - 0.6))) + 0.4 * (dissat > 1.0) + 0.4 * (tenure <= 6)
+    lost_cause = np.clip(1.0 - 3.0 * (comp_affinity - 0.2) - 4.0 * contacts_gone, 0.0, 1.0)
+    sleeping_dog = 0.9 * ((tenure > 36) & (z_eng < 0) & (price_sens < 0.3))
+    return persuadable * lost_cause - sleeping_dog
+
+
+def _contact_graph(
+    rng: np.random.Generator, division: np.ndarray, n: int
+) -> tuple[pl.DataFrame, sparse.csr_matrix]:
+    """Top on-net contacts per subscriber (80% in the same division), with monthly minutes."""
+    degree = 3 + rng.poisson(5, n)
+    src = np.repeat(np.arange(n), degree)
+    dst = rng.integers(0, n, src.size)
+    local = rng.random(src.size) < 0.8
+    for d in range(len(DIVISIONS)):
+        members = np.flatnonzero(division == d)
+        mask = local & (division[src] == d)
+        dst[mask] = members[rng.integers(0, members.size, mask.sum())]
+    minutes = rng.lognormal(2.5, 0.9, src.size).astype(np.float32)
+    edges = (
+        pl.DataFrame({"sub_id": src.astype(np.int32), "contact_id": dst.astype(np.int32), "minutes": minutes})
+        .filter(pl.col("sub_id") != pl.col("contact_id"))
+        .unique(["sub_id", "contact_id"], keep="first", maintain_order=True)
+    )
+    s_, d_, w_ = (edges[c].to_numpy() for c in ("sub_id", "contact_id", "minutes"))
+    adj = sparse.csr_matrix((w_.astype(np.float64), (s_, d_)), shape=(n, n))
+    row_sum = np.asarray(adj.sum(axis=1)).ravel()
+    adj = sparse.diags(1 / np.maximum(row_sum, 1e-9)) @ adj
+    return edges, adj.tocsr()
+
+
+TABLES = ("subscribers", "usage_monthly", "recharges", "network_market", "contacts", "campaigns")
 
 
 def write_tables(tables: dict[str, pl.DataFrame], raw_dir: str | Path) -> None:
@@ -312,7 +426,7 @@ def write_tables(tables: dict[str, pl.DataFrame], raw_dir: str | Path) -> None:
 
 def load_tables(raw_dir: str | Path) -> dict[str, pl.DataFrame]:
     raw_dir = Path(raw_dir)
-    names = ["subscribers", "usage_monthly", "recharges", "network_market"]
+    names = list(TABLES)
     missing = [n for n in names if not (raw_dir / f"{n}.parquet").exists()]
     if missing:
         raise FileNotFoundError(f"Missing tables {missing} in {raw_dir}. Run `churn simulate` first.")
