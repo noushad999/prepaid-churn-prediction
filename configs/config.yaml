@@ -1,0 +1,57 @@
+# Telco churn pipeline configuration.
+# Months are calendar months ("YYYY-MM"); a snapshot "cutoff" is the last day of that month.
+
+seed: 42
+
+paths:
+  raw_dir: data/raw            # simulated data warehouse extracts (parquet)
+  features_dir: data/features  # feature snapshots
+  model_dir: artifacts/model   # model + metadata + drift reference
+  reports_dir: reports         # metrics, charts, gains tables
+  scores_dir: outputs          # batch scores + campaign lists
+
+simulation:
+  n_subscribers: 300000        # active base at the start of the simulation
+  start_month: "2025-01"
+  months: 12
+  gross_add_rate: 0.04         # new SIM activations per month, as share of the initial base
+
+churn:
+  # Prepaid churn = subscriber active in the snapshot month, then ZERO revenue-generating
+  # activity (no usage, no recharge) for the next `inactivity_months` months (~60 days).
+  lookback_months: 3
+  inactivity_months: 2
+
+training:
+  # Out-of-time design: standing at the end of 2025-10, labels are known for cutoffs <= 2025-08.
+  train_cutoffs: ["2025-03", "2025-04", "2025-05", "2025-06", "2025-07"]
+  valid_cutoff: "2025-08"      # early stopping + risk-band thresholds
+  test_cutoff: "2025-10"       # untouched future month, labels from Nov-Dec
+  score_cutoff: "2025-12"      # "today": score the live base, no labels yet
+  lgbm:
+    objective: binary
+    learning_rate: 0.1
+    num_leaves: 31
+    max_depth: 6               # shallow trees keep TreeSHAP reason codes fast
+    min_child_samples: 200
+    feature_fraction: 0.8
+    bagging_fraction: 0.8
+    bagging_freq: 1
+    lambda_l2: 5.0
+    verbose: -1
+  num_boost_round: 2000
+  early_stopping_rounds: 50
+
+campaign:
+  currency: BDT
+  contact_cost: 2.0            # SMS / OBD / push cost per targeted subscriber
+  offer_cost: 40.0             # value of the retention bonus (e.g. data pack)
+  offer_redeem_rate: 0.6       # share of targeted subscribers who redeem the bonus
+  save_rate: 0.30              # share of true would-be churners retained by the offer
+  margin: 0.55                 # contribution margin on ARPU
+  clv_months: 6                # value horizon of a saved subscriber
+
+risk_bands:                    # share of the scored base (by rank) assigned to each band
+  critical: 0.05
+  high: 0.10
+  medium: 0.15

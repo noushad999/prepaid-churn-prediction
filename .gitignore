@@ -1,17 +1,18 @@
 # Python
+__pycache__/
+*.py[cod]
+*.egg-info/
 .venv/
 venv/
-__pycache__/
-*.pyc
-.Python
-*.log
-.DS_Store
-
-# Testing (will add later)
 .pytest_cache/
-htmlcov/
-.coverage
+.ruff_cache/
+build/
+dist/
 
-# ML/Data
-mlruns/
-data/processed/*.npy
+# Generated data & artifacts (reproducible with `make pipeline`)
+data/
+artifacts/
+outputs/
+reports/drift_*.json
+
+.DS_Store

@@ -1,0 +1,201 @@
+"""Point-in-time feature snapshots and churn labels (Polars).
+
+A snapshot at cutoff month T contains every subscriber with activity in T. Features only use
+data up to the last day of T. The label looks strictly forward:
+
+    churn = 1  if the subscriber has NO usage and NO recharge in months T+1 .. T+inactivity_months
+
+This is the standard prepaid definition (60-90 days of zero revenue-generating activity). There
+is no "churn flag" column to cheat with: churn is observed as silence.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime, time
+
+import polars as pl
+
+from churn.config import add_months, month_end, month_label, parse_month
+
+SUM_METRICS = [
+    "revenue",
+    "voice_min",
+    "onnet_min",
+    "data_mb",
+    "sms_cnt",
+    "days_active",
+    "data_pack_cnt",
+    "emergency_loan_cnt",
+    "complaint_cnt",
+]
+MEAN_METRICS = ["drop_call_rate", "data_speed_mbps"]
+TREND_METRICS = ["revenue", "voice_min", "data_mb", "days_active", "data_pack_cnt"]
+
+CATEGORICAL = ["division", "gender", "plan_type", "handset"]
+KEY = ["sub_id", "snapshot"]
+LABEL = "churn"
+
+
+def build_snapshot(
+    tables: dict[str, pl.DataFrame],
+    cutoff: str | date,
+    lookback_months: int = 3,
+    inactivity_months: int = 2,
+    with_label: bool = True,
+) -> pl.DataFrame:
+    cut = parse_month(cutoff)
+    cut_end = datetime.combine(month_end(cut), time.max)
+    first = add_months(cut, -(lookback_months - 1))
+    usage = tables["usage_monthly"]
+    subs = tables["subscribers"]
+
+    # months back from cutoff: 0 = cutoff month, 1 = previous month, ...
+    lb = usage.filter(pl.col("month").is_between(first, cut)).with_columns(
+        mb=((cut.year * 12 + cut.month) - (pl.col("month").dt.year() * 12 + pl.col("month").dt.month())).cast(
+            pl.Int8
+        )
+    )
+    active = lb.filter(pl.col("mb") == 0).select("sub_id")
+
+    aggs = [pl.len().alias("months_active_lb")]
+    for m in SUM_METRICS:
+        for k in range(lookback_months):
+            aggs.append(pl.col(m).filter(pl.col("mb") == k).sum().alias(f"{m}_m{k}"))
+        aggs.append(pl.col(m).sum().truediv(lookback_months).alias(f"{m}_avg{lookback_months}m"))
+    for m in MEAN_METRICS:
+        aggs.append(pl.col(m).filter(pl.col("mb") == 0).mean().alias(f"{m}_m0"))
+        aggs.append(pl.col(m).mean().alias(f"{m}_avg{lookback_months}m"))
+    aggs.append(pl.col("last_active_day").filter(pl.col("mb") == 0).first().alias("last_active_day_m0"))
+    aggs.append((pl.col("onnet_min").sum() / (pl.col("voice_min").sum() + 1e-6)).alias("onnet_share"))
+    usage_feats = lb.join(active, on="sub_id", how="semi").group_by("sub_id").agg(aggs)
+
+    df = (
+        active.join(subs, on="sub_id", how="left")
+        .join(usage_feats, on="sub_id", how="left")
+        .with_columns(
+            tenure_months=(
+                (cut.year * 12 + cut.month)
+                - (pl.col("activation_month").dt.year() * 12 + pl.col("activation_month").dt.month())
+            ).cast(pl.Int16),
+            days_since_last_activity=(month_end(cut).day - pl.col("last_active_day_m0")).cast(pl.Int16),
+        )
+    )
+
+    # months before activation are unknown, not zero
+    null_out = []
+    for m in SUM_METRICS:
+        for k in range(1, lookback_months):
+            null_out.append(
+                pl.when(pl.col("tenure_months") >= k)
+                .then(pl.col(f"{m}_m{k}"))
+                .otherwise(None)
+                .alias(f"{m}_m{k}")
+            )
+    df = df.with_columns(null_out)
+    trends = []
+    for m in TREND_METRICS:
+        prev = pl.mean_horizontal([pl.col(f"{m}_m{k}") for k in range(1, lookback_months)])
+        trends.append(((pl.col(f"{m}_m0") + 1) / (prev + 1)).alias(f"{m}_trend"))
+        trends.append((pl.col(f"{m}_m0") - pl.col(f"{m}_m1")).alias(f"{m}_delta_1m"))
+    df = df.with_columns(trends).with_columns(
+        data_mb_per_active_day=pl.col("data_mb_m0") / pl.col("days_active_m0"),
+        revenue_per_active_day=pl.col("revenue_m0") / pl.col("days_active_m0"),
+    )
+
+    df = df.join(_recharge_features(tables["recharges"], cut_end), on="sub_id", how="left")
+    df = df.join(_market_features(tables["network_market"], cut, lookback_months), on="division", how="left")
+
+    if with_label:
+        horizon_end = add_months(cut, inactivity_months)
+        last_month = usage.select(pl.col("month").max()).item()
+        if horizon_end > last_month:
+            raise ValueError(
+                f"Cannot label cutoff {month_label(cut)}: need data through {month_label(horizon_end)}, "
+                f"have {month_label(last_month)}."
+            )
+        future = add_months(cut, 1)
+        alive_usage = usage.filter(pl.col("month").is_between(future, horizon_end)).select("sub_id")
+        alive_rch = (
+            tables["recharges"]
+            .filter(
+                pl.col("ts").is_between(
+                    datetime.combine(future, time.min), datetime.combine(month_end(horizon_end), time.max)
+                )
+            )
+            .select("sub_id")
+        )
+        alive = pl.concat([alive_usage, alive_rch]).unique()
+        df = (
+            df.join(alive.with_columns(_alive=pl.lit(1)), on="sub_id", how="left")
+            .with_columns(pl.col("_alive").is_null().cast(pl.Int8).alias(LABEL))
+            .drop("_alive")
+        )
+
+    df = df.with_columns(
+        snapshot=pl.lit(month_label(cut)),
+        urban=pl.col("urban").cast(pl.Int8),
+        dual_sim=pl.col("dual_sim").cast(pl.Int8),
+        app_user=pl.col("app_user").cast(pl.Int8),
+        mfs_user=pl.col("mfs_user").cast(pl.Int8),
+    ).drop("activation_month", "last_active_day_m0")
+    front = KEY + ([LABEL] if with_label else [])
+    return df.select(front + [c for c in df.columns if c not in front]).sort("sub_id")
+
+
+def _recharge_features(recharges: pl.DataFrame, cut_end: datetime) -> pl.DataFrame:
+    hist = recharges.filter(pl.col("ts") <= cut_end)
+    last = hist.group_by("sub_id").agg(
+        days_since_last_recharge=((pl.lit(cut_end) - pl.col("ts").max()).dt.total_hours() / 24).cast(
+            pl.Float32
+        )
+    )
+    w90 = (
+        hist.filter(pl.col("ts") > cut_end - pl.duration(days=90))
+        .sort("sub_id", "ts")
+        .with_columns(
+            age_days=(pl.lit(cut_end) - pl.col("ts")).dt.total_hours() / 24,
+            gap_days=pl.col("ts").diff().over("sub_id").dt.total_hours() / 24,
+        )
+    )
+    in30 = pl.col("age_days") <= 30
+    agg = w90.group_by("sub_id").agg(
+        rch_cnt_30d=in30.sum().cast(pl.Int16),
+        rch_amt_30d=pl.col("amount").filter(in30).sum(),
+        rch_cnt_90d=pl.len().cast(pl.Int16),
+        rch_amt_90d=pl.col("amount").sum(),
+        rch_avg_ticket_90d=pl.col("amount").mean(),
+        rch_small_ticket_share_90d=(pl.col("amount") <= 20).mean(),
+        rch_mean_gap_days_90d=pl.col("gap_days").mean(),
+        rch_max_gap_days_90d=pl.col("gap_days").max(),
+        rch_mfs_share_90d=(pl.col("channel") == "mfs").mean(),
+        rch_app_share_90d=(pl.col("channel") == "app").mean(),
+    )
+    return last.join(agg, on="sub_id", how="left").with_columns(
+        rch_amt_trend=(pl.col("rch_amt_30d").fill_null(0) + 1)
+        / ((pl.col("rch_amt_90d").fill_null(0) - pl.col("rch_amt_30d").fill_null(0)) / 2 + 1),
+        rch_cnt_30d=pl.col("rch_cnt_30d").fill_null(0),
+        rch_amt_30d=pl.col("rch_amt_30d").fill_null(0),
+        rch_cnt_90d=pl.col("rch_cnt_90d").fill_null(0),
+        rch_amt_90d=pl.col("rch_amt_90d").fill_null(0),
+    )
+
+
+def _market_features(market: pl.DataFrame, cut: date, lookback_months: int) -> pl.DataFrame:
+    first = add_months(cut, -(lookback_months - 1))
+    w = market.filter(pl.col("month").is_between(first, cut))
+    return w.group_by("division").agg(
+        div_drop_rate_m0=pl.col("avg_drop_call_rate").filter(pl.col("month") == cut).first(),
+        div_drop_rate_change=pl.col("avg_drop_call_rate").filter(pl.col("month") == cut).first()
+        - pl.col("avg_drop_call_rate").filter(pl.col("month") != cut).mean(),
+        div_outage_m0=pl.col("network_outage").filter(pl.col("month") == cut).first().cast(pl.Int8),
+        competitor_promo_m0=pl.col("competitor_promo").filter(pl.col("month") == cut).first().cast(pl.Int8),
+        competitor_promo_lb=pl.col("competitor_promo").sum().cast(pl.Int8),
+    )
+
+
+def feature_columns(df: pl.DataFrame) -> list[str]:
+    return [c for c in df.columns if c not in (*KEY, LABEL)]
+
+
+def build_many(tables: dict[str, pl.DataFrame], cutoffs: list[str], **kwargs) -> pl.DataFrame:
+    return pl.concat([build_snapshot(tables, c, **kwargs) for c in cutoffs], how="vertical_relaxed")
