@@ -1,38 +1,45 @@
-# docker-compose.yml - Multi-service orchestration
-version: '3.8'
-
+# Local end-to-end stack:  CHURN_API_KEYS=my-key docker compose up --build
+#   pipeline   one-shot: simulate -> train -> score (writes the shared volumes)
+#   api        scoring API on :8000 (waits for the pipeline)
+#   dashboard  CVM dashboard on :8501
+#   prometheus metrics on :9090, scraping the API
 services:
+  pipeline:
+    build: .
+    command: ["churn", "pipeline", "--subscribers", "${SUBSCRIBERS:-100000}"]
+    volumes: &store
+      - data:/app/data
+      - artifacts:/app/artifacts
+      - outputs:/app/outputs
+      - reports:/app/reports
+
   api:
     build: .
-    container_name: churn_prediction_api
-    ports:
-      - '5001:5001'
-    volumes:
-      - ./data:/app/data
-      - ./checkpoints:/app/checkpoints
-      - ./logs:/app/logs
+    ports: ["8000:8000"]
     environment:
-      - FLASK_ENV=production
-      - MODEL_PATH=/app/checkpoints/best_model.pth
+      CHURN_API_KEYS: ${CHURN_API_KEYS:-dev-key-change-me}
+      CHURN_SCORES: /app/outputs/scores_2025-12.parquet
+    volumes: *store
+    depends_on:
+      pipeline: {condition: service_completed_successfully}
     restart: unless-stopped
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:5001/health']
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
 
-  # Optional: Add PostgreSQL for future
-  # db:
-  #   image: postgres:15
-  #   container_name: churn_db
-  #   environment:
-  #     POSTGRES_DB: churn_prediction
-  #     POSTGRES_USER: admin
-  #     POSTGRES_PASSWORD: secure_password
-  #   ports:
-  #     - "5432:5432"
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-# volumes:
-#   postgres_data:
+  dashboard:
+    build: .
+    command: ["streamlit", "run", "src/churn/dashboard.py", "--server.port", "8501", "--server.address", "0.0.0.0", "--server.headless", "true"]
+    ports: ["8501:8501"]
+    volumes: *store
+    depends_on:
+      pipeline: {condition: service_completed_successfully}
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    volumes: ["./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    ports: ["9090:9090"]
+    depends_on: [api]
+
+volumes:
+  data:
+  artifacts:
+  outputs:
+  reports:
