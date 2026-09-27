@@ -1,6 +1,6 @@
 # Pipeline on the public Indian prepaid dataset (see prepare_indian_telco.py).
 #   python examples/real_data/prepare_indian_telco.py
-#   export CHURN_PII_SALT=any-local-secret
+#   export CHURN_PII_SALT=local-demo-salt
 #   churn --config examples/real_data/config.yaml validate
 #   churn --config examples/real_data/config.yaml train
 extends: ../../configs/config.yaml

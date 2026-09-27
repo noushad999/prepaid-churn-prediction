@@ -16,7 +16,7 @@ from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Rectangle
 
 from churn.explain import FAMILY_LABELS, primary_driver
 from churn.model import ChurnModel
-from churn.style import DARK, LIGHT, SANS, SERIF
+from churn.style import DARK, LIGHT, SANS
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = Path(__file__).resolve().parent
@@ -42,7 +42,7 @@ def hero(t: dict, name: str) -> None:
     W, H = 16, 5.4
     fig, ax = _canvas(W, H, t)
     ax.text(
-        0.9, 4.62, "PREPAID CHURN PREDICTION", fontsize=13, color=t["clay"], family=SANS, weight="semibold"
+        0.9, 4.62, "PREPAID CHURN PREDICTION", fontsize=13, color=t["accent"], family=SANS, weight="semibold"
     )
     ax.text(
         0.9,
@@ -50,7 +50,8 @@ def hero(t: dict, name: str) -> None:
         "Find the subscribers\ngoing silent, 60 days\nbefore they do.",
         fontsize=38,
         color=t["ink"],
-        family=SERIF,
+        family=SANS,
+        weight="semibold",
         linespacing=1.08,
         va="top",
     )
@@ -80,7 +81,7 @@ def hero(t: dict, name: str) -> None:
             (x0 + 21 * (bw + gap) - gap / 2, y0 - 0.1),
             5 * (bw + gap),
             7 * scale + 0.25,
-            fc=t["clay_soft"],
+            fc=t["accent_soft"],
             ec="none",
             alpha=0.55,
         )
@@ -90,7 +91,7 @@ def hero(t: dict, name: str) -> None:
         if a == 0:
             ax.add_patch(plt.Circle((x + bw / 2, y0 + 0.05), 0.035, color=t["muted"]))
             continue
-        color = t["clay"] if i >= flag else t["ink_2"]
+        color = t["accent"] if i >= flag else t["ink_2"]
         ax.add_patch(
             FancyBboxPatch(
                 (x, y0),
@@ -103,7 +104,7 @@ def hero(t: dict, name: str) -> None:
             )
         )
     fx = x0 + flag * (bw + gap) - gap / 2
-    ax.plot([fx, fx], [y0 - 0.15, y0 + 7 * scale + 0.55], color=t["clay"], lw=1.4, ls=(0, (2, 2)))
+    ax.plot([fx, fx], [y0 - 0.15, y0 + 7 * scale + 0.55], color=t["accent"], lw=1.4, ls=(0, (2, 2)))
     ax.text(
         fx + 0.12,
         y0 + 7 * scale + 0.62,
@@ -197,8 +198,9 @@ def stats(t: dict, name: str, m: dict) -> None:
             1.52,
             num,
             fontsize=38,
-            color=t["clay"] if i == 0 else t["ink"],
-            family=SERIF,
+            color=t["accent"] if i == 0 else t["ink"],
+            family=SANS,
+            weight="semibold",
             va="center",
         )
         ax.text(x + 0.34, 0.7, cap, fontsize=14, color=t["ink_2"], family=SANS, va="center", linespacing=1.4)
@@ -230,7 +232,7 @@ def pipeline(t: dict, name: str) -> None:
                 h,
                 boxstyle="round,pad=0,rounding_size=0.12",
                 fc=t["card"],
-                ec=t["clay"] if hi else t["edge"],
+                ec=t["accent"] if hi else t["edge"],
                 lw=1.5 if hi else 0.8,
             )
         )
@@ -239,12 +241,21 @@ def pipeline(t: dict, name: str) -> None:
             y0 + h - 0.36,
             num,
             fontsize=13,
-            color=t["clay"],
+            color=t["accent"],
             family=SANS,
             weight="semibold",
             va="center",
         )
-        ax.text(x + 0.26, y0 + h - 0.8, title, fontsize=20, color=t["ink"], family=SERIF, va="center")
+        ax.text(
+            x + 0.26,
+            y0 + h - 0.8,
+            title,
+            fontsize=20,
+            color=t["ink"],
+            family=SANS,
+            weight="semibold",
+            va="center",
+        )
         for j, line in enumerate(lines):
             ax.text(
                 x + 0.26,
@@ -327,7 +338,7 @@ def story(t: dict, path: Path, usage: pl.DataFrame) -> None:
                 ax.plot(i, 0.6, "o", ms=4, color=t["muted"])
                 continue
             low = v < 0.8 * med
-            ax.bar(i, v, width=0.72, color=t["clay"] if low else t["ink_2"], alpha=1 if low else 0.3)
+            ax.bar(i, v, width=0.72, color=t["accent"] if low else t["ink_2"], alpha=1 if low else 0.3)
         ax.annotate(
             title,
             xy=(0, 1),
@@ -335,7 +346,8 @@ def story(t: dict, path: Path, usage: pl.DataFrame) -> None:
             xytext=(0, 32),
             textcoords="offset points",
             fontsize=15,
-            family=SERIF,
+            family=SANS,
+            weight="semibold",
             color=t["ink"],
             va="bottom",
         )
@@ -391,7 +403,7 @@ def waterfall(t: dict, path: Path, model: ChurnModel, test: pl.DataFrame) -> Non
     x_col = ends.max() + 0.75
     run = base
     for row, (_f, v) in enumerate(items):
-        ax.barh(row, v, left=run, height=0.58, color=t["clay"] if v > 0 else t["blue"])
+        ax.barh(row, v, left=run, height=0.58, color=t["accent"] if v > 0 else t["violet"])
         ax.plot([max(run, run + v), x_col - 0.42], [row, row], color=t["grid"], lw=0.8, zorder=0)
         ax.text(x_col, row, f"{v:+.2f}", va="center", ha="right", fontsize=10, color=t["ink_2"])
         run += v
@@ -421,7 +433,8 @@ def waterfall(t: dict, path: Path, model: ChurnModel, test: pl.DataFrame) -> Non
         xytext=(0, 58),
         textcoords="offset points",
         fontsize=15,
-        family=SERIF,
+        family=SANS,
+        weight="semibold",
         color=t["ink"],
         va="bottom",
     )

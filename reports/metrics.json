@@ -1,5 +1,5 @@
 {
-  "model_version": "v20260927-042721",
+  "model_version": "v20260927-063307",
   "promoted": true,
   "promotion_decision": "first model: no champion yet",
   "data": {
@@ -416,15 +416,15 @@
     "flags": []
   },
   "timings_s": {
-    "load + validate data (contract)": 3.2,
-    "build feature snapshots": 23.86,
-    "train LightGBM": 74.12,
-    "train logistic-regression baseline": 11.57,
-    "evaluate on out-of-time test month": 8.13,
-    "SHAP reason codes + campaign economics": 13.53,
-    "uplift model on randomised campaigns": 71.25,
-    "segment & fairness report": 7.1,
-    "charts": 1.85,
+    "load + validate data (contract)": 4.61,
+    "build feature snapshots": 23.01,
+    "train LightGBM": 69.01,
+    "train logistic-regression baseline": 11.39,
+    "evaluate on out-of-time test month": 8.53,
+    "SHAP reason codes + campaign economics": 13.5,
+    "uplift model on randomised campaigns": 65.52,
+    "segment & fairness report": 7.25,
+    "charts": 1.76,
     "register model + champion/challenger gate": 1.32
   }
 }

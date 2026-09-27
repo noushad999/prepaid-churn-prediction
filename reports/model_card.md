@@ -1,4 +1,4 @@
-# Model card: churn model `v20260927-042721`
+# Model card: churn model `v20260927-063307`
 
 *Generated at training time. Status in registry: champion; first model: no champion yet.*
 

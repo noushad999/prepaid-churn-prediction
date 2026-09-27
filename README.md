@@ -62,7 +62,7 @@ This repository is a complete, deployable churn system for that problem. It is b
 
 <img src="docs/assets/story.png" width="100%" alt="Three subscribers: one winds down and goes silent, one goes quiet for a month and returns, one leaves without warning">
 
-<sub><b>Figure 1.</b> Monthly active days for three subscribers from the simulated operator. Clay bars mark months of reduced activity; dots mark months with no activity at all.</sub>
+<sub><b>Figure 1.</b> Monthly active days for three subscribers from the simulated operator. Teal bars mark months of reduced activity; dots mark months with no activity at all.</sub>
 
 The model has to tell the first pattern from the second: both show a sharp drop, and only one ends in churn. The third pattern is the irreducible floor, because some subscribers leave with no behavioural warning. The simulated data contains all three, plus:
 
@@ -268,7 +268,7 @@ curl -H "X-API-Key: $KEY" localhost:8000/v1/subscribers/409943
   "recommended_action": "Price-matched counter-offer against the competitor the subscriber calls most",
   "reasons": [{"code": "usage_decline", "description": "Falling voice / data / revenue"},
               {"code": "inactivity", "description": "Going quiet: fewer active days, long time since last activity"}],
-  "model_version": "v20260927-042721"
+  "model_version": "v20260927-063307"
 }
 ```
 
@@ -343,4 +343,4 @@ Sources can be CSV, Parquet or SQL (`pip install -e ".[sql]"`). `contacts` and `
 
 ## License
 
-Code is released under the MIT license. Bundled fonts (Source Serif 4, Source Sans 3) are under the SIL Open Font License. Built in Dhaka, Bangladesh.
+Code is released under the MIT license. The bundled Source Sans 3 font is under the SIL Open Font License. Built in Dhaka, Bangladesh.

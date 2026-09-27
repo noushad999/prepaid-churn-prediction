@@ -24,7 +24,7 @@ from sklearn.metrics import (  # noqa: E402
     roc_curve,
 )
 
-from churn.style import LIGHT, SANS, SERIES, SERIF  # noqa: E402
+from churn.style import LIGHT, SANS, SERIES  # noqa: E402
 
 SURFACE, INK, INK_2, MUTED, GRID = (
     LIGHT["surface"],
@@ -79,7 +79,7 @@ def gains_table(y: np.ndarray, p: np.ndarray, bins: int = 10) -> pd.DataFrame:
 
 # ---------------------------------------------------------------------------- charts
 def _style(ax, title: str, xlabel: str, ylabel: str, subtitle: str | None = None) -> None:
-    """Editorial chart frame: serif title, sans subtitle stating the takeaway, recessive axes."""
+    """Chart frame: bold title, subtitle stating the takeaway, recessive axes."""
     ax.set_facecolor(SURFACE)
     ax.annotate(
         title,
@@ -89,7 +89,8 @@ def _style(ax, title: str, xlabel: str, ylabel: str, subtitle: str | None = None
         textcoords="offset points",
         fontsize=15,
         color=INK,
-        family=SERIF,
+        family=SANS,
+        weight="semibold",
         va="bottom",
     )
     if subtitle:

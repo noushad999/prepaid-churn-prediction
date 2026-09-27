@@ -24,20 +24,20 @@ from churn.style import LIGHT
 
 st.set_page_config(page_title="Churn · CVM dashboard", page_icon="📉", layout="wide")
 
-CLAY, INK, INK_2, MUTED, CARD = LIGHT["clay"], LIGHT["ink"], LIGHT["ink_2"], LIGHT["muted"], LIGHT["card"]
+ACCENT, INK, INK_2, MUTED, CARD = LIGHT["accent"], LIGHT["ink"], LIGHT["ink_2"], LIGHT["muted"], LIGHT["card"]
 BAND_ORDER = ["critical", "high", "medium", "low"]
 
 st.markdown(
     f"""
-<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   html, body, [class*="css"], .stMarkdown, .stText {{ font-family: 'Source Sans 3', sans-serif; }}
-  h1, h2, h3 {{ font-family: 'Source Serif 4', serif !important; font-weight: 400 !important; color: {INK}; }}
+  h1, h2, h3 {{ font-family: 'Source Sans 3', sans-serif !important; font-weight: 700 !important; color: {INK}; letter-spacing: -.01em; }}
   .kpi {{ background: {CARD}; border: 1px solid {LIGHT["edge"]}; border-radius: 10px; padding: 16px 18px; }}
-  .kpi .v {{ font-family: 'Source Serif 4', serif; font-size: 30px; color: {INK}; line-height: 1.1; }}
-  .kpi .v.accent {{ color: {CLAY}; }}
+  .kpi .v {{ font-family: 'Source Sans 3', sans-serif; font-weight: 700; font-size: 30px; color: {INK}; line-height: 1.1; }}
+  .kpi .v.accent {{ color: {ACCENT}; }}
   .kpi .l {{ color: {INK_2}; font-size: 14px; margin-top: 6px; }}
-  .eyebrow {{ color: {CLAY}; font-weight: 600; letter-spacing: .04em; font-size: 13px; }}
+  .eyebrow {{ color: {ACCENT}; font-weight: 600; letter-spacing: .04em; font-size: 13px; }}
 </style>
 """,
     unsafe_allow_html=True,
@@ -87,11 +87,11 @@ def bars(df: pl.DataFrame, x: str, y: str, title: str, order: list[str] | None =
     else:
         df = df.sort(x, descending=True).with_row_index("_order")
     title_params = alt.TitleParams(
-        title, anchor="start", font="Source Serif 4", fontSize=16, fontWeight="normal", color=INK
+        title, anchor="start", font="Source Sans 3", fontSize=16, fontWeight=600, color=INK
     )
     chart = (
         alt.Chart(df.to_pandas(), title=title_params)
-        .mark_bar(color=CLAY, cornerRadiusEnd=3)
+        .mark_bar(color=ACCENT, cornerRadiusEnd=3)
         .encode(
             x=alt.X(
                 f"{x}:Q",

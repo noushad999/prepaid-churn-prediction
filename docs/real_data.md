@@ -16,10 +16,14 @@ downloads it from a public mirror and maps it onto the [data contract](data_cont
 
 ```bash
 python examples/real_data/prepare_indian_telco.py      # download + map to contract tables
-export CHURN_PII_SALT=any-local-secret
+export CHURN_PII_SALT=local-demo-salt
 churn --config examples/real_data/config.yaml validate
 churn --config examples/real_data/config.yaml train
 ```
+
+The validation holdout is drawn from the pseudonymised subscriber ids, so the salt decides which subscribers
+early-stop the model. With the salt above the results match the table below exactly. Other salts moved
+out-of-time ROC-AUC between 0.847 and 0.853 in test runs.
 
 ## What the contract made visible
 

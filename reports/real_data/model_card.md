@@ -1,6 +1,6 @@
-# Model card: churn model `v20260927-042135`
+# Model card: churn model `v20260927-063508`
 
-*Generated at training time. Status in registry: champion; challenger not worse than champion on the same test rows (PR-AUC 0.2788 → 0.2788, capture@10% 0.5498 → 0.5498).*
+*Generated at training time. Status in registry: champion; first model: no champion yet.*
 
 ## Model
 
