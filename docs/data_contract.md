@@ -5,6 +5,10 @@ computed. `churn validate` checks a source against the contract and writes `repo
 Map an operator's own column names and codes in the `source:` config section
 (see [`configs/operator_example.yaml`](../configs/operator_example.yaml)).
 
+Only the core columns are required; every other KPI and table is optional, and features built from
+missing inputs are skipped (see the [real-data validation](real_data.md) for an operator export with 13 of them
+missing).
+
 **Errors block training and scoring:** missing required tables or columns, values that cannot be cast,
 nulls in required fields, duplicate keys, out-of-range or unknown values above 0.1% of rows, and
 subscriber ids missing from `subscribers`. **Warnings are logged:** missing optional sources (their
@@ -50,15 +54,15 @@ Key: `sub_id, month`
 | `offnet_banglalink_min` | float |  |  | [0, ] |  |
 | `offnet_teletalk_min` | float |  |  | [0, ] |  |
 | `data_mb` | float | ✓ |  | [0, ] |  |
-| `sms_cnt` | int | ✓ |  | [0, ] |  |
-| `data_pack_cnt` | int | ✓ |  | [0, ] |  |
+| `sms_cnt` | int |  |  | [0, ] |  |
+| `data_pack_cnt` | int |  |  | [0, ] |  |
 | `revenue` | float | ✓ |  | [0, ] |  |
-| `days_active` | int | ✓ |  | [1, 31] |  |
-| `last_active_day` | int | ✓ |  | [1, 31] |  |
-| `emergency_loan_cnt` | int | ✓ |  | [0, ] |  |
-| `complaint_cnt` | int | ✓ |  | [0, ] |  |
-| `drop_call_rate` | float | ✓ | ✓ | [0, 1] |  |
-| `data_speed_mbps` | float | ✓ | ✓ | [0, ] |  |
+| `days_active` | int |  |  | [1, 31] |  |
+| `last_active_day` | int |  |  | [1, 31] |  |
+| `emergency_loan_cnt` | int |  |  | [0, ] |  |
+| `complaint_cnt` | int |  |  | [0, ] |  |
+| `drop_call_rate` | float |  | ✓ | [0, 1] |  |
+| `data_speed_mbps` | float |  | ✓ | [0, ] |  |
 
 ### `recharges` (required)
 
@@ -73,9 +77,9 @@ Key: `—`
 | `amount` | float | ✓ |  | [0.01, ] |  |
 | `channel` | str | ✓ | ✓ |  |  |
 
-### `network_market` (required)
+### `network_market` (optional)
 
-division-month network KPIs and market intelligence
+division-month network KPIs and market intelligence (optional)
 
 Key: `division, month`
 

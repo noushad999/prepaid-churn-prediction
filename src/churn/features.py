@@ -10,6 +10,8 @@ is no "churn flag" column to cheat with: churn is observed as silence.
 
 Optional sources enrich the snapshot when present: per-operator off-net minutes (competitor
 pressure) and the CDR contact graph (social contagion: contacts who recently went silent).
+Optional usage KPIs (active days, SMS, complaints, call drops ...) and the network/market table
+are used when an operator provides them. Features for missing inputs are simply not built.
 """
 
 from __future__ import annotations
@@ -46,6 +48,7 @@ def build_snapshot(
     lookback_months: int = 3,
     inactivity_months: int = 2,
     with_label: bool = True,
+    label_events: tuple[str, ...] = ("usage", "recharge"),
 ) -> pl.DataFrame:
     cut = parse_month(cutoff)
     cut_end = datetime.combine(month_end(cut), time.max)
@@ -60,16 +63,21 @@ def build_snapshot(
         )
     )
     active = lb.filter(pl.col("mb") == 0).select("sub_id")
+    present = set(usage.columns)
+    sum_metrics = [m for m in SUM_METRICS if m in present]
+    trend_metrics = [m for m in TREND_METRICS if m in present]
+    has_activity_days = "last_active_day" in present
 
     aggs = [pl.len().alias("months_active_lb")]
-    for m in SUM_METRICS:
+    for m in sum_metrics:
         for k in range(lookback_months):
             aggs.append(pl.col(m).filter(pl.col("mb") == k).sum().alias(f"{m}_m{k}"))
         aggs.append(pl.col(m).sum().truediv(lookback_months).alias(f"{m}_avg{lookback_months}m"))
-    for m in MEAN_METRICS:
+    for m in (m for m in MEAN_METRICS if m in present):
         aggs.append(pl.col(m).filter(pl.col("mb") == 0).mean().alias(f"{m}_m0"))
         aggs.append(pl.col(m).mean().alias(f"{m}_avg{lookback_months}m"))
-    aggs.append(pl.col("last_active_day").filter(pl.col("mb") == 0).first().alias("last_active_day_m0"))
+    if has_activity_days:
+        aggs.append(pl.col("last_active_day").filter(pl.col("mb") == 0).first().alias("last_active_day_m0"))
     aggs.append((pl.col("onnet_min").sum() / (pl.col("voice_min").sum() + 1e-6)).alias("onnet_share"))
     has_competitor = all(c in usage.columns for c in COMPETITOR_COLS)
     if has_competitor:
@@ -95,13 +103,16 @@ def build_snapshot(
                 (cut.year * 12 + cut.month)
                 - (pl.col("activation_month").dt.year() * 12 + pl.col("activation_month").dt.month())
             ).cast(pl.Int16),
-            days_since_last_activity=(month_end(cut).day - pl.col("last_active_day_m0")).cast(pl.Int16),
         )
     )
+    if has_activity_days:
+        df = df.with_columns(
+            days_since_last_activity=(month_end(cut).day - pl.col("last_active_day_m0")).cast(pl.Int16)
+        ).drop("last_active_day_m0")
 
     # months before activation are unknown, not zero
     null_out = []
-    for m in SUM_METRICS:
+    for m in sum_metrics:
         for k in range(1, lookback_months):
             null_out.append(
                 pl.when(pl.col("tenure_months") >= k)
@@ -111,22 +122,27 @@ def build_snapshot(
             )
     df = df.with_columns(null_out)
     trends = []
-    for m in TREND_METRICS:
+    for m in trend_metrics:
         prev = pl.mean_horizontal([pl.col(f"{m}_m{k}") for k in range(1, lookback_months)])
         trends.append(((pl.col(f"{m}_m0") + 1) / (prev + 1)).alias(f"{m}_trend"))
         trends.append((pl.col(f"{m}_m0") - pl.col(f"{m}_m1")).alias(f"{m}_delta_1m"))
-    df = df.with_columns(trends).with_columns(
-        data_mb_per_active_day=pl.col("data_mb_m0") / pl.col("days_active_m0"),
-        revenue_per_active_day=pl.col("revenue_m0") / pl.col("days_active_m0"),
-    )
+    df = df.with_columns(trends)
+    if "days_active" in present:
+        df = df.with_columns(
+            data_mb_per_active_day=pl.col("data_mb_m0") / pl.col("days_active_m0"),
+            revenue_per_active_day=pl.col("revenue_m0") / pl.col("days_active_m0"),
+        )
 
     df = df.join(_recharge_features(tables["recharges"], cut_end), on="sub_id", how="left")
-    df = df.join(_market_features(tables["network_market"], cut, lookback_months), on="division", how="left")
+    if tables.get("network_market") is not None:
+        df = df.join(
+            _market_features(tables["network_market"], cut, lookback_months), on="division", how="left"
+        )
     if tables.get("contacts") is not None:
         df = df.join(_graph_features(tables["contacts"], usage, cut), on="sub_id", how="left")
 
     if with_label:
-        df = df.join(build_labels(tables, cut, inactivity_months), on="sub_id", how="left")
+        df = df.join(build_labels(tables, cut, inactivity_months, label_events), on="sub_id", how="left")
 
     df = df.with_columns(
         snapshot=pl.lit(month_label(cut)),
@@ -134,15 +150,23 @@ def build_snapshot(
         dual_sim=pl.col("dual_sim").cast(pl.Int8),
         app_user=pl.col("app_user").cast(pl.Int8),
         mfs_user=pl.col("mfs_user").cast(pl.Int8),
-    ).drop("activation_month", "last_active_day_m0")
+    ).drop("activation_month")
     front = KEY + ([LABEL] if with_label else [])
     return df.select(front + [c for c in df.columns if c not in front]).sort("sub_id")
 
 
 def build_labels(
-    tables: dict[str, pl.DataFrame], cutoff: str | date, inactivity_months: int = 2
+    tables: dict[str, pl.DataFrame],
+    cutoff: str | date,
+    inactivity_months: int = 2,
+    label_events: tuple[str, ...] = ("usage", "recharge"),
 ) -> pl.DataFrame:
-    """Churn label for every subscriber active in the cutoff month: silent for the next N months."""
+    """Churn label for every subscriber active in the cutoff month: silent for the next N months.
+
+    `label_events` sets what counts as "not silent". The default (usage or a recharge) matches the
+    revenue-generating-event definition most finance teams use; ("usage",) matches definitions
+    that ignore top-ups, as in the public Indian telecom case study.
+    """
     cut = parse_month(cutoff)
     usage = tables["usage_monthly"]
     horizon_end = add_months(cut, inactivity_months)
@@ -154,22 +178,27 @@ def build_labels(
         )
     future = add_months(cut, 1)
     active = usage.filter(pl.col("month") == cut).select("sub_id").unique()
-    alive_usage = usage.filter(pl.col("month").is_between(future, horizon_end)).select("sub_id")
-    alive_rch = (
-        tables["recharges"]
-        .filter(
-            pl.col("ts").is_between(
-                datetime.combine(future, time.min), datetime.combine(month_end(horizon_end), time.max)
-            )
-        )
-        .select("sub_id")
-    )
-    alive = pl.concat([alive_usage, alive_rch]).unique().with_columns(_alive=pl.lit(1))
+    parts = []
+    if "usage" in label_events:
+        parts.append(usage.filter(pl.col("month").is_between(future, horizon_end)).select("sub_id"))
+    if "recharge" in label_events:
+        parts.append(_recharge_ids(tables["recharges"], future, horizon_end))
+    if not parts:
+        raise ValueError("label_events must include 'usage' and/or 'recharge'")
+    alive = pl.concat(parts).unique().with_columns(_alive=pl.lit(1))
     return (
         active.join(alive, on="sub_id", how="left")
         .with_columns(pl.col("_alive").is_null().cast(pl.Int8).alias(LABEL))
         .drop("_alive")
     )
+
+
+def _recharge_ids(recharges: pl.DataFrame, future: date, horizon_end: date) -> pl.DataFrame:
+    return recharges.filter(
+        pl.col("ts").is_between(
+            datetime.combine(future, time.min), datetime.combine(month_end(horizon_end), time.max)
+        )
+    ).select("sub_id")
 
 
 def _recharge_features(recharges: pl.DataFrame, cut_end: datetime) -> pl.DataFrame:
@@ -264,6 +293,11 @@ def _market_features(market: pl.DataFrame, cut: date, lookback_months: int) -> p
         competitor_promo_m0=pl.col("competitor_promo").filter(pl.col("month") == cut).first().cast(pl.Int8),
         competitor_promo_lb=pl.col("competitor_promo").sum().cast(pl.Int8),
     )
+
+
+def arpu_column(df: pl.DataFrame) -> str:
+    """Name of the lookback-average revenue column (`revenue_avg<N>m`), whatever the lookback."""
+    return next(c for c in df.columns if c.startswith("revenue_avg") and c.endswith("m"))
 
 
 def feature_columns(df: pl.DataFrame) -> list[str]:

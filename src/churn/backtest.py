@@ -32,7 +32,14 @@ def run(cfg: dict, month: str) -> dict:
     scores = pl.read_parquet(scores_path)
     tables, _ = ingest.load(cfg)
     labelled = scores.join(
-        build_labels(tables, month, cfg["churn"]["inactivity_months"]), on="sub_id", how="inner"
+        build_labels(
+            tables,
+            month,
+            cfg["churn"]["inactivity_months"],
+            tuple(cfg["churn"].get("label_events", ("usage", "recharge"))),
+        ),
+        on="sub_id",
+        how="inner",
     )
     y = labelled["churn"].to_numpy()
     p = labelled["churn_probability"].to_numpy()

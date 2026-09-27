@@ -22,6 +22,7 @@ churn:
   # activity (no usage, no recharge) for the next `inactivity_months` months (~60 days).
   lookback_months: 3
   inactivity_months: 2
+  label_events: [usage, recharge]   # what breaks the silence; [usage] ignores top-ups
 
 features:
   exclude: []                  # e.g. [gender, age] where local policy forbids targeting on them

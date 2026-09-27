@@ -11,7 +11,7 @@ import polars as pl
 
 from churn import ingest
 from churn.campaign import expected_net
-from churn.features import build_snapshot
+from churn.features import arpu_column, build_snapshot
 from churn.model import ChurnModel
 from churn.monitor import drift_report, load_reference
 from churn.registry import resolve_model_dir
@@ -32,7 +32,7 @@ def score_snapshot(
     * sleeping-dog guard: never target a subscriber with negative predicted uplift
     * holdout: a deterministic random share of targets gets no offer, so every campaign measures its ROI
     """
-    arpu = snap["revenue_avg3m"].to_numpy()
+    arpu = snap[arpu_column(snap)].to_numpy()
     parts, uplift_parts = [], []
     for start in range(0, snap.height, chunk_size):
         X = model.matrix(snap.slice(start, chunk_size))
@@ -71,7 +71,7 @@ def score_snapshot(
             "plan_type",
             "handset",
             "tenure_months",
-            pl.col("revenue_avg3m").alias("arpu_3m"),
+            pl.col(arpu_column(snap)).alias("arpu_3m"),
         )
         .hstack(scored)
         .with_columns(

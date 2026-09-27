@@ -22,7 +22,7 @@ from churn import ingest
 from churn.campaign import campaign_summary, expected_net, profit_curve
 from churn.config import month_label, parse_month
 from churn.explain import FAMILY_LABELS, global_family_importance
-from churn.features import CATEGORICAL, LABEL, build_many, build_snapshot, feature_columns
+from churn.features import CATEGORICAL, LABEL, arpu_column, build_many, build_snapshot, feature_columns
 from churn.model import ChurnModel
 from churn.monitor import build_reference, save_reference
 from churn.registry import Registry, export_champion, gate
@@ -77,7 +77,11 @@ def run(cfg: dict) -> dict:
     reports.mkdir(parents=True, exist_ok=True)
     Path(paths["features_dir"]).mkdir(parents=True, exist_ok=True)
     timer = Timer()
-    snap_kw = dict(lookback_months=ccfg["lookback_months"], inactivity_months=ccfg["inactivity_months"])
+    snap_kw = dict(
+        lookback_months=ccfg["lookback_months"],
+        inactivity_months=ccfg["inactivity_months"],
+        label_events=tuple(ccfg.get("label_events", ("usage", "recharge"))),
+    )
 
     print("Training churn model")
     with timer("load + validate data (contract)"):
@@ -88,13 +92,27 @@ def run(cfg: dict) -> dict:
         )
     with timer("build feature snapshots"):
         train = build_many(tables, tcfg["train_cutoffs"], **snap_kw)
-        valid = build_snapshot(tables, tcfg["valid_cutoff"], **snap_kw)
+        if tcfg.get("valid_cutoff"):
+            valid = build_snapshot(tables, tcfg["valid_cutoff"], **snap_kw)
+        else:
+            # short histories: hold out a random share of subscribers from the training months for
+            # early stopping (grouped by subscriber); the test month stays strictly out-of-time
+            held = (
+                train.select("sub_id")
+                .unique()
+                .sample(fraction=tcfg.get("valid_fraction", 0.2), seed=cfg["seed"])
+            )
+            valid = train.join(held, on="sub_id", how="semi")
+            train = train.join(held, on="sub_id", how="anti")
         test = build_snapshot(tables, tcfg["test_cutoff"], **snap_kw)
         for name, df in (("train", train), ("valid", valid), ("test", test)):
             df.write_parquet(Path(paths["features_dir"]) / f"{name}.parquet")
 
     excluded = set(cfg.get("features", {}).get("exclude") or [])
-    features = [f for f in feature_columns(train) if f not in excluded]
+    # drop policy-excluded features and features the source never populates (e.g. unknown age)
+    features = [
+        f for f in feature_columns(train) if f not in excluded and train[f].null_count() < train.height
+    ]
     cat_features = [c for c in CATEGORICAL if c in features]
     categories = {c: sorted(train[c].drop_nulls().unique().to_list()) for c in cat_features}
     X_tr, X_va, X_te = (_to_pandas(d, features, categories) for d in (train, valid, test))
@@ -144,7 +162,7 @@ def run(cfg: dict) -> dict:
         )
         sample = np.random.default_rng(cfg["seed"]).choice(len(X_te), min(20_000, len(X_te)), replace=False)
         family_importance = global_family_importance(model.contributions(X_te.iloc[sample]), features)
-        arpu = test["revenue_avg3m"].to_numpy()
+        arpu = test[arpu_column(test)].to_numpy()
         camp_cfg = cfg["campaign"]
         campaign = campaign_summary(y_te, p_te, arpu, camp_cfg)
         rng = np.random.default_rng(cfg["seed"])
@@ -309,7 +327,7 @@ def _train_uplift(
     )
     results["sleeping_dog_share"] = float((uplift <= 0).mean())
     # economics: rank by expected value, measure realised incremental value on the randomised test
-    value = camp_cfg["margin"] * test["revenue_avg3m"].to_numpy() * camp_cfg["clv_months"]
+    value = camp_cfg["margin"] * test[arpu_column(test)].to_numpy() * camp_cfg["clv_months"]
     cost = camp_cfg["contact_cost"] + camp_cfg["offer_redeem_rate"] * camp_cfg["offer_cost"]
     rankings = {
         "Risk × value + sleeping-dog guard": np.where(uplift > 0, risk * value, -1.0),

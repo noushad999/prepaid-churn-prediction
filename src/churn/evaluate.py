@@ -170,7 +170,7 @@ def plot_gains(y: np.ndarray, scores: dict[str, np.ndarray], path: Path) -> None
     ax.annotate(
         f"{cap10:.0f}% of churners\nin the top 10%",
         (10, cap10),
-        xytext=(15, 44),
+        xytext=(42, 24),
         va="top",
         fontsize=9.5,
         color=INK,
@@ -209,7 +209,8 @@ def plot_calibration(y: np.ndarray, p: np.ndarray, path: Path, bins: int = 20) -
 
 
 def plot_driver_importance(importance: dict[str, float], labels: dict[str, str], path: Path) -> None:
-    items = list(importance.items())[::-1]
+    # families the data cannot express (no such inputs) are omitted
+    items = [(k, v) for k, v in importance.items() if v >= 0.005][::-1]
     fig, (ax,) = _figure(width=7.6, height=4.2)
     names = [labels.get(k, k).split(":")[0] for k, _ in items]
     ax.barh(names, [v for _, v in items], color=SERIES[0], height=0.62)
