@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/noushad999/telecom-churn-prediction/actions/workflows/ci.yml"><img src="https://github.com/noushad999/telecom-churn-prediction/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/noushad999/prepaid-churn-prediction/actions/workflows/ci.yml"><img src="https://github.com/noushad999/prepaid-churn-prediction/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-5e5d59" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/license-MIT-5e5d59" alt="MIT license">
 </p>
@@ -295,8 +295,8 @@ Keys are held as SHA-256 digests and compared in constant time. Access logs are 
 ## Quickstart
 
 ```bash
-git clone https://github.com/noushad999/telecom-churn-prediction.git
-cd telecom-churn-prediction
+git clone https://github.com/noushad999/prepaid-churn-prediction.git
+cd prepaid-churn-prediction
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,dashboard]"
 
