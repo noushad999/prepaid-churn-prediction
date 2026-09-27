@@ -17,7 +17,7 @@
 <p align="center">
   <a href="https://github.com/noushad999/prepaid-churn-prediction/actions/workflows/ci.yml"><img src="https://github.com/noushad999/prepaid-churn-prediction/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-5e5d59" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/license-MIT-5e5d59" alt="MIT license">
+  <img src="https://img.shields.io/badge/license-all%20rights%20reserved-5e5d59" alt="License: all rights reserved">
 </p>
 
 <picture>
@@ -343,4 +343,6 @@ Sources can be CSV, Parquet or SQL (`pip install -e ".[sql]"`). `contacts` and `
 
 ## License
 
-Code is released under the MIT license. The bundled Source Sans 3 font is under the SIL Open Font License. Built in  Bangladesh.
+Copyright © 2025–2026 Md Noushad Jahan Ramim. **All rights reserved.**
+
+This repository is published for viewing and evaluation only. It is not open source. Copying, modifying, redistributing, using any part of it in another project, or presenting it as your own work requires written permission. See [LICENSE](LICENSE) for the full terms. The bundled Source Sans 3 font remains under the SIL Open Font License.

@@ -1,0 +1,62 @@
+Copyright (c) 2025-2026 Md Noushad Jahan Ramim. All rights reserved.
+
+This repository (source code, documentation, figures, reports, configuration and
+any other material in it, together "the Software") is published for viewing only.
+It is NOT open source.
+
+1. Permitted use
+
+   You may view and read the Software on GitHub, and run it on your own computer,
+   solely to evaluate the author's work (for example, as part of a hiring process
+   or a technical review). Any copies made for that purpose must be deleted once
+   the evaluation ends.
+
+2. Prohibited use
+
+   Without the author's prior written permission, you may not:
+
+   a. copy, reproduce, modify, adapt, translate or create derivative works of the
+      Software, in whole or in part;
+   b. publish, distribute, sublicense, sell, rent or otherwise make the Software or
+      any part of it available to anyone else;
+   c. use the Software, or any part of it, in any product, service, project,
+      research, coursework or commercial activity;
+   d. present the Software or any part of it as your own work, including in a
+      portfolio, resume, job application, assignment, publication or repository,
+      or remove or alter this notice or the author's name;
+   e. use the Software to train, fine-tune or evaluate machine-learning models.
+
+3. Forks
+
+   GitHub's Terms of Service allow users to fork public repositories on GitHub.
+   A fork grants no rights beyond those in section 1. All other restrictions
+   in this license apply to forks and to any copy, wherever it is stored.
+
+4. Permission requests
+
+   To request permission for any other use, contact the author through GitHub
+   (https://github.com/noushad999). Permission is valid only if it is given in
+   writing and names the permitted use.
+
+5. Third-party components
+
+   Third-party material in or used by the Software remains under its own license.
+   Nothing in this license restricts rights granted by those licenses:
+   - the Source Sans 3 font in docs/assets/fonts is licensed under the SIL Open
+     Font License 1.1 (see docs/assets/fonts/OFL-SourceSans3.txt);
+   - Python dependencies are licensed by their respective authors;
+   - the public dataset downloaded by examples/real_data/prepare_indian_telco.py is
+     not included in this repository and is subject to its publisher's terms.
+
+6. No warranty
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+   FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR BE
+   LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM, OUT OF OR IN
+   CONNECTION WITH THE SOFTWARE OR ITS USE.
+
+7. Termination
+
+   Any use that breaches this license ends your permission under section 1 at
+   once. You must then stop using the Software and delete all copies.

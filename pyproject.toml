@@ -9,7 +9,7 @@ description = "Prepaid mobile subscriber churn prediction: data simulation, feat
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Md Noushad Jahan Ramim" }]
-license = { text = "MIT" }
+license = { text = "Proprietary. All rights reserved. See LICENSE." }
 dependencies = [
     "numpy>=1.26",
     "pandas>=2.1",
