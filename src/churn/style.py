@@ -43,9 +43,17 @@ DARK = {
 }
 SERIES = [LIGHT["clay"], LIGHT["blue"], LIGHT["teal"]]
 
-FONT_DIR = Path(__file__).resolve().parents[2] / "docs" / "assets" / "fonts"
+# repo checkout first, then the working directory (installed package, e.g. the container's /app)
+FONT_DIR = next(
+    (
+        d
+        for d in (Path(__file__).resolve().parents[2] / "docs/assets/fonts", Path.cwd() / "docs/assets/fonts")
+        if d.exists()
+    ),
+    None,
+)
 SERIF, SANS = "DejaVu Serif", "DejaVu Sans"
-if FONT_DIR.exists():
+if FONT_DIR is not None:
     for ttf in FONT_DIR.glob("*.ttf"):
         font_manager.fontManager.addfont(str(ttf))
     SERIF, SANS = "Source Serif 4 Display", "Source Sans 3"
