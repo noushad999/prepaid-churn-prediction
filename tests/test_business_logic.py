@@ -104,3 +104,21 @@ def test_value_curve_counts_contact_cost():
     t = np.tile([0, 1], 500)
     x, v = value_curve(y, t, np.arange(1000.0), np.full(1000, 100.0), cost=10.0)
     assert v[-1] == pytest.approx(-10.0 * 1000)  # nobody churns: pure cost
+
+
+def test_segment_report_flags_miscalibrated_group():
+    import polars as pl
+
+    from churn.fairness import segment_report
+
+    rng = np.random.default_rng(5)
+    n = 20_000
+    div = np.where(rng.random(n) < 0.5, "Dhaka", "Sylhet")
+    p = np.where(rng.random(n) < 0.1, 0.6, 0.02)  # a sharp, well-ranking model
+    y = (rng.random(n) < p).astype(int)
+    p_biased = np.where(div == "Sylhet", p + 0.08, p)  # ...that over-predicts Sylhet
+    test = pl.DataFrame({"churn": y, "division": div, "tenure_months": np.full(n, 24), "urban": [None] * n})
+    rep = segment_report(test, p_biased, p > 0.3)
+    flagged = {(f["dimension"], f["segment"]) for f in rep["flags"]}
+    assert ("division", "Sylhet") in flagged and ("division", "Dhaka") not in flagged
+    assert not any(r["dimension"] == "urban" for r in rep["segments"])  # unknown -> not reported as rural

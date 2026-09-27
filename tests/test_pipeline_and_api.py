@@ -40,6 +40,12 @@ def test_batch_scores(scores):
     assert 0.03 < holdout.mean() < 0.2  # ~10% of every campaign is held out to measure ROI
 
 
+def test_model_card_and_segments_written(trained, small_cfg):
+    card = (Path(small_cfg["paths"]["reports_dir"]) / "model_card.md").read_text()
+    assert "## Segments and fairness" in card and "## Intended use" in card
+    assert {s["dimension"] for s in trained["segments"]["segments"]} >= {"division", "tenure", "handset"}
+
+
 def test_uplift_trained_and_reported(trained, small_cfg):
     u = trained["uplift_test"]
     assert u is not None and "Risk + sleeping-dog guard" in u["rankings"]

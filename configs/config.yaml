@@ -60,6 +60,12 @@ campaign:
 registry:
   tolerance: 0.005             # challenger may not lose more than this in PR-AUC or capture@10%
 
+fairness:                      # segment review thresholds in the model card
+  max_calibration_gap: 0.02    # |mean predicted - observed churn| per segment
+  min_auc: 0.75                # within-segment ranking quality
+  min_reach_ratio: 0.5         # segment's churners reached vs overall reach
+  min_segment_size: 500
+
 monitoring:                    # `churn backtest` alerts once outcomes are known
   max_capture_drop: 0.05       # absolute drop in capture@10% vs the model's test month
   max_pr_auc_drop_rel: 0.20    # relative drop in PR-AUC

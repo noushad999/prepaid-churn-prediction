@@ -18,10 +18,11 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from churn import evaluate as ev
-from churn import ingest
+from churn import ingest, model_card
 from churn.campaign import campaign_summary, expected_net, profit_curve
 from churn.config import month_label, parse_month
 from churn.explain import FAMILY_LABELS, global_family_importance
+from churn.fairness import segment_report
 from churn.features import CATEGORICAL, LABEL, arpu_column, build_many, build_snapshot, feature_columns
 from churn.model import ChurnModel
 from churn.monitor import build_reference, save_reference
@@ -179,6 +180,12 @@ def run(cfg: dict) -> dict:
                 cfg, tables, train, snap_kw, features, categories, booster, reports
             )
 
+    with timer("segment & fairness report"):
+        selected = expected_net(p_te, arpu, camp_cfg) > 0
+        if uplift_results is not None:  # production policy: never contact predicted sleeping dogs
+            selected &= uplift_model.predict(X_te) > 0
+        segments = segment_report(test, p_te, selected, cfg.get("fairness"))
+
     with timer("charts"):
         ev.plot_roc_pr(y_te, scores, reports / "roc_pr.png")
         ev.plot_gains(y_te, scores, reports / "cumulative_gains.png")
@@ -263,11 +270,19 @@ def run(cfg: dict) -> dict:
         "top_features_gain": dict(top_features),
         "campaign_test": campaign,
         "uplift_test": uplift_results,
+        "segments": segments,
         "timings_s": timer.marks,
     }
     (vdir / "metrics.json").write_text(json.dumps(results, indent=2))
     (reports / "metrics.json").write_text(json.dumps(results, indent=2))
+    card = model_card.render(results, cfg, model.metadata)
+    (vdir / "model_card.md").write_text(card)
+    (reports / "model_card.md").write_text(card)
     _print_summary(results, gains, camp_cfg["currency"])
+    if segments["flags"]:
+        print(f"\nSegment review flags ({len(segments['flags'])}):")
+        for f in segments["flags"]:
+            print(f"  {f['dimension']}={f['segment']}: {'; '.join(f['issues'])}")
     print(f"\nModel {version}: {'PROMOTED to champion' if promote else 'REJECTED'} — {reason}")
     return results
 
