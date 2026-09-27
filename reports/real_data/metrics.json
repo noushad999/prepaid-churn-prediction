@@ -1,5 +1,5 @@
 {
-  "model_version": "v20260927-041743",
+  "model_version": "v20260927-042135",
   "promoted": true,
   "promotion_decision": "challenger not worse than champion on the same test rows (PR-AUC 0.2788 \u2192 0.2788, capture@10% 0.5498 \u2192 0.5498)",
   "data": {
@@ -122,14 +122,82 @@
     "blanket_campaign_profit": -468361.77506250003
   },
   "uplift_test": null,
+  "segments": {
+    "overall_reach": 0.5087064676616916,
+    "thresholds": {
+      "max_calibration_gap": 0.02,
+      "min_auc": 0.75,
+      "min_reach_ratio": 0.5,
+      "min_segment_size": 500
+    },
+    "segments": [
+      {
+        "dimension": "division",
+        "segment": "circle_109",
+        "n": 92091,
+        "churn_rate": 0.04365247418314493,
+        "mean_predicted": 0.04198516779850343,
+        "calibration_gap": -0.0016673063846415065,
+        "roc_auc": 0.8527501570278753,
+        "contact_rate": 0.11323582109000879,
+        "reach": 0.5087064676616916
+      },
+      {
+        "dimension": "plan_type",
+        "segment": "prepaid",
+        "n": 92091,
+        "churn_rate": 0.04365247418314493,
+        "mean_predicted": 0.04198516779850343,
+        "calibration_gap": -0.0016673063846415065,
+        "roc_auc": 0.8527501570278753,
+        "contact_rate": 0.11323582109000879,
+        "reach": 0.5087064676616916
+      },
+      {
+        "dimension": "tenure",
+        "segment": "1-3 years",
+        "n": 36421,
+        "churn_rate": 0.053156146179401995,
+        "mean_predicted": 0.051773671276454,
+        "calibration_gap": -0.0013824749029479957,
+        "roc_auc": 0.8308209821733488,
+        "contact_rate": 0.14431234727217815,
+        "reach": 0.5222107438016529
+      },
+      {
+        "dimension": "tenure",
+        "segment": "3+ years",
+        "n": 38337,
+        "churn_rate": 0.02211962334037614,
+        "mean_predicted": 0.020651003205477456,
+        "calibration_gap": -0.0014686201348986828,
+        "roc_auc": 0.8601539155888244,
+        "contact_rate": 0.052299345280016694,
+        "reach": 0.3903301886792453
+      },
+      {
+        "dimension": "tenure",
+        "segment": "3-11 months",
+        "n": 17333,
+        "churn_rate": 0.07130906363583915,
+        "mean_predicted": 0.06860380178179534,
+        "calibration_gap": -0.0027052618540438084,
+        "roc_auc": 0.8295621779611589,
+        "contact_rate": 0.18271505221254256,
+        "reach": 0.5687702265372169
+      }
+    ],
+    "flags": []
+  },
   "timings_s": {
-    "load + validate data (contract)": 0.72,
-    "build feature snapshots": 1.9,
-    "train LightGBM": 1.0,
-    "train logistic-regression baseline": 1.08,
-    "evaluate on out-of-time test month": 0.66,
-    "SHAP reason codes + campaign economics": 2.32,
-    "charts": 1.36,
-    "register model + champion/challenger gate": 0.34
+    "load + validate data (contract)": 0.74,
+    "build feature snapshots": 1.86,
+    "train LightGBM": 1.17,
+    "train logistic-regression baseline": 1.23,
+    "evaluate on out-of-time test month": 0.82,
+    "SHAP reason codes + campaign economics": 2.4,
+    "segment & fairness report": 0.15,
+    "charts": 1.3,
+    "register model + champion/challenger gate": 0.33
   }
 }

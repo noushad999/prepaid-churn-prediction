@@ -1,7 +1,7 @@
 {
-  "model_version": "v20260926-195935",
+  "model_version": "v20260927-042721",
   "promoted": true,
-  "promotion_decision": "challenger not worse than champion on the same test rows (PR-AUC 0.5480 \u2192 0.5480, capture@10% 0.7423 \u2192 0.7423)",
+  "promotion_decision": "first model: no champion yet",
   "data": {
     "train_rows": 1585011,
     "valid_rows": 311143,
@@ -172,15 +172,259 @@
       }
     }
   },
+  "segments": {
+    "overall_reach": 0.39453125,
+    "thresholds": {
+      "max_calibration_gap": 0.02,
+      "min_auc": 0.75,
+      "min_reach_ratio": 0.5,
+      "min_segment_size": 500
+    },
+    "segments": [
+      {
+        "dimension": "division",
+        "segment": "Barishal",
+        "n": 13900,
+        "churn_rate": 0.04697841726618705,
+        "mean_predicted": 0.04876642649425351,
+        "calibration_gap": 0.0017880092280664547,
+        "roc_auc": 0.8910226257128226,
+        "contact_rate": 0.029568345323741006,
+        "reach": 0.35987748851454826
+      },
+      {
+        "dimension": "division",
+        "segment": "Chattogram",
+        "n": 61752,
+        "churn_rate": 0.040112061147817075,
+        "mean_predicted": 0.04370268487191126,
+        "calibration_gap": 0.0035906237240941816,
+        "roc_auc": 0.8980034861425239,
+        "contact_rate": 0.02947272962819018,
+        "reach": 0.40613645538958415
+      },
+      {
+        "dimension": "division",
+        "segment": "Dhaka",
+        "n": 98027,
+        "churn_rate": 0.027533230640537813,
+        "mean_predicted": 0.032246279082639676,
+        "calibration_gap": 0.004713048442101863,
+        "roc_auc": 0.8892769214375894,
+        "contact_rate": 0.017780815489610004,
+        "reach": 0.3419785105594665
+      },
+      {
+        "dimension": "division",
+        "segment": "Khulna",
+        "n": 31043,
+        "churn_rate": 0.03939696549946848,
+        "mean_predicted": 0.0412470270534672,
+        "calibration_gap": 0.001850061553998722,
+        "roc_auc": 0.9038776403309473,
+        "contact_rate": 0.02989401797506684,
+        "reach": 0.410466067048242
+      },
+      {
+        "dimension": "division",
+        "segment": "Mymensingh",
+        "n": 23458,
+        "churn_rate": 0.046167618722823774,
+        "mean_predicted": 0.046742634372383025,
+        "calibration_gap": 0.0005750156495592518,
+        "roc_auc": 0.8935066157012644,
+        "contact_rate": 0.02984056611816864,
+        "reach": 0.36934441366574333
+      },
+      {
+        "dimension": "division",
+        "segment": "Rajshahi",
+        "n": 32669,
+        "churn_rate": 0.04297652208515718,
+        "mean_predicted": 0.04630266306767274,
+        "calibration_gap": 0.0033261409825155602,
+        "roc_auc": 0.9094482511642275,
+        "contact_rate": 0.031528360219168015,
+        "reach": 0.4337606837606838
+      },
+      {
+        "dimension": "division",
+        "segment": "Rangpur",
+        "n": 25993,
+        "churn_rate": 0.04628169122456046,
+        "mean_predicted": 0.0478788866484556,
+        "calibration_gap": 0.001597195423895137,
+        "roc_auc": 0.8883479414949249,
+        "contact_rate": 0.03393221251875505,
+        "reach": 0.42726517040731504
+      },
+      {
+        "dimension": "division",
+        "segment": "Sylhet",
+        "n": 19252,
+        "churn_rate": 0.05370870558902971,
+        "mean_predicted": 0.05579065593162138,
+        "calibration_gap": 0.0020819503425916694,
+        "roc_auc": 0.8944072572177112,
+        "contact_rate": 0.042592977353002284,
+        "reach": 0.44197292069632493
+      },
+      {
+        "dimension": "gender",
+        "segment": "F",
+        "n": 115718,
+        "churn_rate": 0.03762595274719577,
+        "mean_predicted": 0.04213290021744367,
+        "calibration_gap": 0.0045069474702479,
+        "roc_auc": 0.9013473645879085,
+        "contact_rate": 0.027834909002920894,
+        "reach": 0.4088194763435921
+      },
+      {
+        "dimension": "gender",
+        "segment": "M",
+        "n": 190376,
+        "churn_rate": 0.03898600663949237,
+        "mean_predicted": 0.04134046341496295,
+        "calibration_gap": 0.0023544567754705745,
+        "roc_auc": 0.895195669604286,
+        "contact_rate": 0.026857376980291635,
+        "reach": 0.3861492859067637
+      },
+      {
+        "dimension": "handset",
+        "segment": "feature_phone",
+        "n": 90170,
+        "churn_rate": 0.048353110790728626,
+        "mean_predicted": 0.05205056819104195,
+        "calibration_gap": 0.0036974574003133254,
+        "roc_auc": 0.8881294122175192,
+        "contact_rate": 0.03515581679050682,
+        "reach": 0.4098623853211009
+      },
+      {
+        "dimension": "handset",
+        "segment": "smartphone_3g",
+        "n": 48208,
+        "churn_rate": 0.03700630600730169,
+        "mean_predicted": 0.03987159389348127,
+        "calibration_gap": 0.002865287886179582,
+        "roc_auc": 0.8985966938393547,
+        "contact_rate": 0.018731330899435777,
+        "reach": 0.31390134529147984
+      },
+      {
+        "dimension": "handset",
+        "segment": "smartphone_4g",
+        "n": 167716,
+        "churn_rate": 0.03358057668916502,
+        "mean_predicted": 0.03655129789791036,
+        "calibration_gap": 0.002970721208745343,
+        "roc_auc": 0.8998195224617679,
+        "contact_rate": 0.025406043549810395,
+        "reach": 0.408203125
+      },
+      {
+        "dimension": "plan_type",
+        "segment": "postpaid",
+        "n": 15809,
+        "churn_rate": 0.010120817255993422,
+        "mean_predicted": 0.013276565331168373,
+        "calibration_gap": 0.0031557480751749512,
+        "roc_auc": 0.9076606332673014,
+        "contact_rate": 0.018533746600037954,
+        "reach": 0.38125
+      },
+      {
+        "dimension": "plan_type",
+        "segment": "prepaid",
+        "n": 290285,
+        "churn_rate": 0.04001584649568527,
+        "mean_predicted": 0.043184724629687005,
+        "calibration_gap": 0.0031688781340017333,
+        "roc_auc": 0.8951480398800884,
+        "contact_rate": 0.027700363435933652,
+        "reach": 0.3947141873278237
+      },
+      {
+        "dimension": "tenure",
+        "segment": "0-2 months",
+        "n": 30850,
+        "churn_rate": 0.09183144246353322,
+        "mean_predicted": 0.10003103139146205,
+        "calibration_gap": 0.008199588927928825,
+        "roc_auc": 0.8659401373738582,
+        "contact_rate": 0.05189627228525122,
+        "reach": 0.32827391457818567
+      },
+      {
+        "dimension": "tenure",
+        "segment": "1-3 years",
+        "n": 49547,
+        "churn_rate": 0.02827618221083012,
+        "mean_predicted": 0.03091803466988846,
+        "calibration_gap": 0.00264185245905834,
+        "roc_auc": 0.8961391168244414,
+        "contact_rate": 0.020606696671846933,
+        "reach": 0.39257673090649536
+      },
+      {
+        "dimension": "tenure",
+        "segment": "3+ years",
+        "n": 170377,
+        "churn_rate": 0.028906483856389067,
+        "mean_predicted": 0.031026084421263127,
+        "calibration_gap": 0.00211960056487406,
+        "roc_auc": 0.8845777651892475,
+        "contact_rate": 0.018987304624450484,
+        "reach": 0.3618274111675127
+      },
+      {
+        "dimension": "tenure",
+        "segment": "3-11 months",
+        "n": 55320,
+        "churn_rate": 0.04730657989877079,
+        "mean_predicted": 0.05136989592899522,
+        "calibration_gap": 0.0040633160302244314,
+        "roc_auc": 0.8966000569401568,
+        "contact_rate": 0.04477584960231381,
+        "reach": 0.5288498280473825
+      },
+      {
+        "dimension": "urban",
+        "segment": "rural",
+        "n": 166996,
+        "churn_rate": 0.046522072384967306,
+        "mean_predicted": 0.0498887504625915,
+        "calibration_gap": 0.0033666780776241967,
+        "roc_auc": 0.8937667815187795,
+        "contact_rate": 0.03313851828786318,
+        "reach": 0.4073883382674733
+      },
+      {
+        "dimension": "urban",
+        "segment": "urban",
+        "n": 139098,
+        "churn_rate": 0.028807028138434772,
+        "mean_predicted": 0.0317369425742872,
+        "calibration_gap": 0.002929914435852426,
+        "roc_auc": 0.8957268314807408,
+        "contact_rate": 0.02012969273461876,
+        "reach": 0.3696031944097829
+      }
+    ],
+    "flags": []
+  },
   "timings_s": {
-    "load + validate data (contract)": 1.24,
-    "build feature snapshots": 19.92,
-    "train LightGBM": 70.98,
-    "train logistic-regression baseline": 10.08,
-    "evaluate on out-of-time test month": 8.59,
-    "SHAP reason codes + campaign economics": 15.88,
-    "uplift model on randomised campaigns": 73.59,
-    "charts": 1.87,
-    "register model + champion/challenger gate": 4.96
+    "load + validate data (contract)": 3.2,
+    "build feature snapshots": 23.86,
+    "train LightGBM": 74.12,
+    "train logistic-regression baseline": 11.57,
+    "evaluate on out-of-time test month": 8.13,
+    "SHAP reason codes + campaign economics": 13.53,
+    "uplift model on randomised campaigns": 71.25,
+    "segment & fairness report": 7.1,
+    "charts": 1.85,
+    "register model + champion/challenger gate": 1.32
   }
 }

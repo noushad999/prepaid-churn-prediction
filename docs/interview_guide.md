@@ -27,7 +27,9 @@ Subscribers appear in several monthly snapshots, and behaviour shifts over time 
 Gradient boosting handles imbalance fine for *ranking*. Resampling distorts probabilities, and the campaign maths (`p × value − cost`) needs calibrated probabilities. Brier = 0.024 and the calibration curve sits on the diagonal. v1 of this repo oversampled *before* splitting, which leaked synthetic copies of test rows into training.
 
 **Is the data real?**
-No. Subscriber data can't be published, so I simulated an operator DWH with realistic grain (monthly usage, event-level recharges, network/market tables) and a behavioural churn process with deliberate noise: abrupt churn, recovery, temporary dormancy. Results show the method; on real data I'd expect AUC in a similar 0.80–0.90 band.
+The headline results are simulated, because subscriber data can't be published. I simulated an operator DWH with realistic grain (monthly usage, event-level recharges, network/market tables) and a behavioural churn process with deliberate noise: abrupt churn, recovery, temporary dormancy.
+
+I then ran the same pipeline, unchanged, on a public dataset of 99,999 real prepaid subscribers. Only a mapping file and an adapter were written. Out-of-time ROC-AUC was 0.853, against 0.807 for logistic regression and 0.742 for the recency rule, and contacting 10% reached 55% of churners. The top features were the same recency and trend signals the simulator encodes. The contract also caught that the dataset's "churners" mostly still recharged, which is why the label events are configurable. See `docs/real_data.md`.
 
 ## Model
 
@@ -99,3 +101,12 @@ Beyond recency and trends:
 - **Social contagion:** contacts from the CDR graph who recently went silent.
 
 Both are point-in-time safe and add signal on top of usage features.
+
+## Governance and delivery
+
+**How do you know the model treats segments fairly?**
+Every training run produces a segment report by division, urban/rural, gender, plan, handset and tenure. It covers calibration gap, within-segment ROC-AUC, the share contacted and the share of churners reached. Contact rates are *expected* to differ, because they follow risk and value. What gets flagged is miscalibration, weak ranking inside a segment, or a segment whose churners are reached at less than half the overall rate. All 21 segments passed. New SIMs are the weakest group (ROC-AUC 0.866), which fits: they have the least history. The report goes into a generated model card with intended and out-of-scope uses.
+
+**Does the Docker/Kubernetes setup actually work?**
+CI proves it on every push. It builds the image, runs the full pipeline inside the container, and starts the API from it. It then checks that an unauthenticated call gets 401, that a keyed prediction returns a probability, and that Prometheus metrics are exposed. The Kubernetes manifests are rendered with kustomize and validated in strict mode with kubeconform against the 1.30 schemas.
+

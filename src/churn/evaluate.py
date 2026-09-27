@@ -170,7 +170,7 @@ def plot_gains(y: np.ndarray, scores: dict[str, np.ndarray], path: Path) -> None
     ax.annotate(
         f"{cap10:.0f}% of churners\nin the top 10%",
         (10, cap10),
-        xytext=(42, 24),
+        xytext=(21, 15),
         va="top",
         fontsize=9.5,
         color=INK,
