@@ -343,4 +343,4 @@ Sources can be CSV, Parquet or SQL (`pip install -e ".[sql]"`). `contacts` and `
 
 ## License
 
-Code is released under the MIT license. The bundled Source Sans 3 font is under the SIL Open Font License. Built in Dhaka, Bangladesh.
+Code is released under the MIT license. The bundled Source Sans 3 font is under the SIL Open Font License. Built in  Bangladesh.
